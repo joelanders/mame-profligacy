@@ -10,6 +10,7 @@
  *   V50 (µPD70216)    V30 (µPD70116)
  *   V53 (µPD70236)    V33 (µPD70136)
  *   V53A (µPD70236A)  V33A (µPD70136A)
+ *   V55 (µPD70433)    V33A-compatible core with V55 extensions (partial)
  *
  *   V40HL and V50HL (µPD70208h and µPD70216h) exist and have additional
  *   features like the V53.
@@ -46,6 +47,7 @@ DEFINE_DEVICE_TYPE(V40,  v40_device,  "v40",  "NEC V40")
 DEFINE_DEVICE_TYPE(V50,  v50_device,  "v50",  "NEC V50")
 DEFINE_DEVICE_TYPE(V53,  v53_device,  "v53",  "NEC V53")
 DEFINE_DEVICE_TYPE(V53A, v53a_device, "v53a", "NEC V53A")
+DEFINE_DEVICE_TYPE(V55,  v55_device,  "v55",  "NEC V55")
 
 u8 device_v5x_interface::SULA_r()
 {
@@ -867,8 +869,8 @@ device_memory_interface::space_config_vector v53_device::memory_space_config() c
 	};
 }
 
-v53_device::v53_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock)
-	: v33_base_device(mconfig, type, tag, owner, clock, address_map_constructor(FUNC(v53_device::internal_port_map), this))
+v53_device::v53_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, bool v55_extensions)
+	: v33_base_device(mconfig, type, tag, owner, clock, address_map_constructor(FUNC(v53_device::internal_port_map), this), v55_extensions)
 	, device_v5x_interface(mconfig, *this, clock, true)
 	, m_sint_w(*this)
 	, m_tout1_w(*this)
@@ -876,11 +878,1456 @@ v53_device::v53_device(const machine_config &mconfig, device_type type, const ch
 }
 
 v53_device::v53_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: v53_device(mconfig, V53, tag, owner, clock)
+	: v53_device(mconfig, V53, tag, owner, clock, false)
 {
 }
 
 v53a_device::v53a_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: v53_device(mconfig, V53A, tag, owner, clock)
+	: v53_device(mconfig, V53A, tag, owner, clock, false)
 {
+}
+
+v55_device::v55_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: v53_device(mconfig, V55, tag, owner, clock, true)
+	, m_sfr_config("sfr", ENDIANNESS_LITTLE, 16, 9, 0, address_map_constructor(FUNC(v55_device::sfr_map), this))
+	, m_sfr{}
+	, m_adc_in_cb(*this, 0x00)
+	, m_port_in_cb(*this, 0xff)
+	, m_port_out_cb(*this)
+	, m_txd0_handler(*this)
+	, m_txd1_handler(*this)
+	, m_adc_fint_cb(*this)
+	, m_timer{}
+	, m_adc_timer(nullptr)
+	, m_uart0_tx_timer(nullptr)
+	, m_uart0_rx_timer(nullptr)
+	, m_uart1_tx_timer(nullptr)
+	, m_uart1_rx_timer(nullptr)
+	, m_adc_running(false)
+	, m_rxd0(1)
+	, m_cts0(0)
+	, m_uart0_txd_state(1)
+	, m_uart0_tx_byte(0)
+	, m_uart0_tx_bit(0)
+	, m_uart0_rx_byte(0)
+	, m_uart0_rx_bit(0)
+	, m_uart0_rx_prev(1)
+	, m_uart0_tx_active(false)
+	, m_uart0_tx_loaded(false)
+	, m_uart0_rx_active(false)
+	, m_uart0_rx_full(false)
+	, m_rxd1(1)
+	, m_cts1(0)
+	, m_uart1_txd_state(1)
+	, m_uart1_tx_byte(0)
+	, m_uart1_tx_bit(0)
+	, m_uart1_rx_byte(0)
+	, m_uart1_rx_bit(0)
+	, m_uart1_rx_prev(1)
+	, m_uart1_tx_active(false)
+	, m_uart1_tx_loaded(false)
+	, m_uart1_rx_active(false)
+	, m_uart1_rx_full(false)
+	, m_timer_irq_bank{}
+	, m_timer_irq_pending{}
+	, m_timer_irq_in_service{}
+	, m_adc_irq_pending(false)
+	, m_adc_irq_in_service(false)
+	, m_internal_serial_irq_pending(0)
+	, m_internal_serial_irq_in_service(0)
+	, m_special_irq_stack{}
+	, m_special_irq_stack_depth(0)
+	, m_serial_irq_mode(serial_irq_mode::off)
+	, m_timer_irq_experiment(true)
+	, m_adc_irq_experiment(true)
+	, m_adc_irq_bank(0xff)
+{
+	m_timer_irq_bank.fill(0xff);
+	m_timer.fill(nullptr);
+}
+
+u8 v55_device::internal_serial_irq_ic(serial_irq_source source) const
+{
+	return m_sfr[0x0da + unsigned(source)];
+}
+
+v55_device::serial_irq_mode v55_device::current_serial_irq_mode() const
+{
+	return m_serial_irq_mode;
+}
+
+bool v55_device::tx0_late_irq_window() const
+{
+	// Prophecy-specific experiment: only allow INTST0 while the main CPU is in
+	// the final B1271/B127B completion wait corridor. Broad TX0 service
+	// destabilizes earlier boot, so this isolates the suspected missing late
+	// finalization path without changing the rest of transport setup.
+	const u32 curpc = pc();
+	return (curpc >= 0x0b1271) && (curpc <= 0x0b1285);
+}
+
+bool v55_device::internal_serial_irq_enabled(serial_irq_source source) const
+{
+	const serial_irq_mode mode = current_serial_irq_mode();
+	if (mode == serial_irq_mode::off)
+		return false;
+
+	const u8 ic = internal_serial_irq_ic(source);
+	if ((ic == 0x00) || BIT(ic, 6))
+		return false;
+
+	if (mode == serial_irq_mode::tx0_only)
+	{
+		// Narrow experiment: only the channel-0 TX bankswitched worker
+		// (`IC30 -> bank 7`) is allowed through.
+		return (source == SERIAL_IRQ_INTST0) && BIT(ic, 4);
+	}
+
+	if (mode == serial_irq_mode::rx0_only)
+	{
+		// Middle-ground experiment: only the observed Prophecy channel-0 RX
+		// bankswitched parser path (`IC28 -> bank 8`) is allowed through. This
+		// is intentionally narrower than the broader V25/V35-inspired model.
+		return (source == SERIAL_IRQ_INTSR0) && BIT(ic, 4);
+	}
+
+	if (mode == serial_irq_mode::rx0_rx1)
+	{
+		// Narrow default for Prophecy: keep the proven channel-0 RX parser
+		// (`IC28 -> bank 8`) and the channel-1 bankswitched paths used by the
+		// MIDI/SysEx transport. RX1 (`IC29 -> bank 11`) is already proven; the
+		// matching TX-ready worker (`IC31 -> bank 10`) is the lowest-risk next
+		// addition before opening the broader serial source set.
+		return ((source == SERIAL_IRQ_INTSR0) || (source == SERIAL_IRQ_INTSR1) || (source == SERIAL_IRQ_INTST1)) && BIT(ic, 4);
+	}
+
+	if (mode == serial_irq_mode::rx0_late_tx0)
+	{
+		if ((source == SERIAL_IRQ_INTSR0) && BIT(ic, 4))
+			return true;
+
+		if ((source == SERIAL_IRQ_INTST0) && BIT(ic, 4))
+			return tx0_late_irq_window();
+
+		return false;
+	}
+
+	if (mode == serial_irq_mode::rx0_tx0)
+	{
+		// Prophecy's board-link RX/TX workers plus the channel-1 MIDI/SysEx pair.
+		return ((source == SERIAL_IRQ_INTSR0) || (source == SERIAL_IRQ_INTST0) ||
+			(source == SERIAL_IRQ_INTSR1) || (source == SERIAL_IRQ_INTST1)) && BIT(ic, 4);
+	}
+
+	return true;
+}
+
+bool v55_device::internal_serial_irq_bankswitch(serial_irq_source source) const
+{
+	return BIT(internal_serial_irq_ic(source), 4);
+}
+
+u16 v55_device::interrupt_vector_address(u8 vector) const
+{
+	const u16 reloc = (vector >= 8 && vector <= 47) ? (u16(m_sfr[0x0c5] & 0x03) << 8) : 0;
+	return reloc + (u16(vector) << 2);
+}
+
+u8 v55_device::interrupt_vector_bank(u8 vector)
+{
+	// V55PI hardware manual: register-bank interrupt response selects the
+	// target bank from the low four bits of the source's vector-table entry.
+	return u8(mem_read_word(interrupt_vector_address(vector)) & 0x000f);
+}
+
+int v55_device::timer_irq_index_from_source(int source) const
+{
+	const int timer = source - SERIAL_IRQ_COUNT;
+	return (timer >= 0 && timer < TIMER_IRQ_COUNT) ? timer : -1;
+}
+
+u8 v55_device::special_irq_vector(int source) const
+{
+	if (source >= 0 && source < SERIAL_IRQ_COUNT)
+		return u8(26 + source);
+	const int timer = timer_irq_index_from_source(source);
+	if (timer >= 0)
+		return timer_irq_vector(timer_irq_source(timer));
+	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+		return 37;
+
+	return 0xff;
+}
+
+u8 v55_device::special_irq_priority(int source) const
+{
+	if (source >= 0 && source < SERIAL_IRQ_COUNT)
+		return internal_serial_irq_ic(serial_irq_source(source)) & 0x03;
+	const int timer = timer_irq_index_from_source(source);
+	if (timer >= 0)
+		return timer_irq_priority(timer_irq_source(timer));
+	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+		return adc_irq_priority();
+
+	return 0xff;
+}
+
+bool v55_device::priority_is_tracked(u8 priority) const
+{
+	return (priority < 3) || BIT(m_sfr[0x0c5], 7);
+}
+
+bool v55_device::can_accept_priority(u8 priority) const
+{
+	if (priority > 3)
+		return false;
+
+	const u8 highest_blocking = ((priority == 3) && !priority_is_tracked(priority)) ? 2 : priority;
+	for (u8 level = 0; level <= highest_blocking; level++)
+	{
+		if (BIT(m_sfr[0x0c4], level))
+			return false;
+	}
+
+	return true;
+}
+
+void v55_device::mark_special_irq_in_service(int source)
+{
+	if (m_special_irq_stack_depth < m_special_irq_stack.size())
+		m_special_irq_stack[m_special_irq_stack_depth++] = u8(source);
+
+	const u8 priority = special_irq_priority(source);
+	if (priority_is_tracked(priority))
+		m_sfr[0x0c4] |= u8(1U << priority);
+}
+
+int v55_device::current_special_irq_stack_source() const
+{
+	if (m_special_irq_stack_depth == 0)
+		return -1;
+
+	return m_special_irq_stack[m_special_irq_stack_depth - 1];
+}
+
+int v55_device::pop_special_irq_stack_source()
+{
+	if (m_special_irq_stack_depth == 0)
+		return -1;
+
+	const int source = m_special_irq_stack[--m_special_irq_stack_depth];
+	m_special_irq_stack[m_special_irq_stack_depth] = 0xff;
+
+	for (u8 level = 0; level < 4; level++)
+	{
+		if (BIT(m_sfr[0x0c4], level))
+		{
+			m_sfr[0x0c4] &= ~u8(1U << level);
+			break;
+		}
+	}
+
+	return source;
+}
+
+void v55_device::clear_special_irq_source(int source)
+{
+	const int timer = timer_irq_index_from_source(source);
+	if (timer >= 0)
+	{
+		m_timer_irq_in_service[timer] = false;
+		m_sfr[timer_irq_ic(timer_irq_source(timer))] &= ~u8(0x80);
+		return;
+	}
+
+	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	{
+		m_adc_irq_in_service = false;
+		m_sfr[0x0e5] &= ~u8(0x80);
+		m_adc_fint_cb(1);
+		return;
+	}
+
+	if (source >= 0 && source < SERIAL_IRQ_COUNT)
+	{
+		m_internal_serial_irq_in_service &= ~u8(1U << unsigned(source));
+		m_sfr[0x0da + unsigned(source)] &= ~u8(0x80);
+	}
+}
+
+u8 v55_device::internal_serial_irq_bank(serial_irq_source source)
+{
+	switch (source)
+	{
+	case SERIAL_IRQ_INTSR0:
+	case SERIAL_IRQ_INTST0:
+	case SERIAL_IRQ_INTSR1:
+	case SERIAL_IRQ_INTST1:
+	case SERIAL_IRQ_INTSER0:
+	case SERIAL_IRQ_INTSER1:
+		return interrupt_vector_bank(26 + unsigned(source));
+	default:
+		break;
+	}
+
+	return 0xff;
+}
+
+int v55_device::select_internal_serial_irq() const
+{
+	int best = -1;
+	u8 best_pri = 0xff;
+
+	for (unsigned source = 0; source < SERIAL_IRQ_COUNT; source++)
+	{
+		if (!BIT(m_internal_serial_irq_pending, source))
+			continue;
+		if (BIT(m_internal_serial_irq_in_service, source))
+			continue;
+		if (!internal_serial_irq_enabled(serial_irq_source(source)))
+			continue;
+
+		const u8 pri = internal_serial_irq_ic(serial_irq_source(source)) & 0x03;
+		if (!can_accept_priority(pri))
+			continue;
+		if ((best < 0) || (pri < best_pri))
+		{
+			best = int(source);
+			best_pri = pri;
+		}
+	}
+
+	return best;
+}
+
+int v55_device::current_internal_serial_irq_source() const
+{
+	for (unsigned source = 0; source < SERIAL_IRQ_COUNT; source++)
+	{
+		if (BIT(m_internal_serial_irq_in_service, source))
+			return int(source);
+	}
+
+	return -1;
+}
+
+int v55_device::select_internal_special_irq() const
+{
+	int best_source = -1;
+	u8 best_priority = 0xff;
+
+	for (unsigned timer = 0; timer < TIMER_IRQ_COUNT; timer++)
+	{
+		if (!m_timer_irq_pending[timer] || m_timer_irq_in_service[timer] || !timer_irq_enabled(timer_irq_source(timer)))
+			continue;
+
+		const u8 timer_priority = timer_irq_priority(timer_irq_source(timer));
+		if (can_accept_priority(timer_priority) && ((best_source < 0) || (timer_priority < best_priority)))
+		{
+			best_source = SERIAL_IRQ_COUNT + int(timer);
+			best_priority = timer_priority;
+		}
+	}
+
+	if (m_adc_irq_pending && !m_adc_irq_in_service && adc_irq_enabled())
+	{
+		const int adc_source = SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT;
+		const u8 adc_priority = adc_irq_priority();
+		if (can_accept_priority(adc_priority) && ((best_source < 0) || (adc_priority < best_priority)))
+		{
+			best_source = adc_source;
+			best_priority = adc_priority;
+		}
+	}
+
+	const int serial_source = select_internal_serial_irq();
+	if (serial_source >= 0)
+	{
+		const u8 serial_priority = internal_serial_irq_ic(serial_irq_source(serial_source)) & 0x03;
+		if ((best_source < 0) || (serial_priority < best_priority))
+		{
+			best_source = serial_source;
+			best_priority = serial_priority;
+		}
+	}
+
+	return best_source;
+}
+
+int v55_device::current_internal_special_irq_source() const
+{
+	const int stack_source = current_special_irq_stack_source();
+	if (stack_source >= 0)
+		return stack_source;
+
+	return current_internal_serial_irq_source();
+}
+
+void v55_device::update_internal_serial_irq_line()
+{
+	if (current_serial_irq_mode() == serial_irq_mode::off)
+		return;
+
+	// INTST0 is a latched UART event, raised when TxB0 transfers to the shift
+	// register, when transmission is enabled with TxB0 empty, or on All Sent.
+
+	// Channel 1 uses the same Prophecy-side "ready while idle" transport style
+	// for MIDI/SysEx traffic. The bank-10 worker is expected to keep draining
+	// the queued-byte ring while UARTS1 bit 5 stays high and no byte is in
+	// flight.
+	if (internal_serial_irq_enabled(SERIAL_IRQ_INTST1))
+	{
+		const u8 mask = u8(1U << unsigned(SERIAL_IRQ_INTST1));
+		const bool active = BIT(m_sfr[0x17b], 7) && BIT(m_sfr[0x17c], 5) && !m_uart1_tx_active &&
+			!BIT(m_internal_serial_irq_in_service, unsigned(SERIAL_IRQ_INTST1));
+		const bool pending = BIT(m_internal_serial_irq_pending, unsigned(SERIAL_IRQ_INTST1));
+
+		if (active && !pending)
+		{
+			m_internal_serial_irq_pending |= mask;
+			m_sfr[0x0df] |= 0x80;
+		}
+		else if (!active && pending)
+		{
+			m_internal_serial_irq_pending &= ~mask;
+			if (!BIT(m_internal_serial_irq_in_service, unsigned(SERIAL_IRQ_INTST1)))
+				m_sfr[0x0df] &= ~u8(0x80);
+		}
+	}
+
+	set_int_line((select_internal_special_irq() >= 0) ? ASSERT_LINE : CLEAR_LINE);
+}
+
+void v55_device::request_internal_serial_irq(serial_irq_source source)
+{
+	if (!internal_serial_irq_enabled(source))
+		return;
+
+	m_internal_serial_irq_pending |= u8(1U << unsigned(source));
+	m_sfr[0x0da + unsigned(source)] |= 0x80;
+	update_internal_serial_irq_line();
+}
+
+bool v55_device::handle_special_int_ack()
+{
+	const int source = select_internal_special_irq();
+	if (source < 0)
+		return false;
+
+	const int timer = timer_irq_index_from_source(source);
+	if (timer >= 0)
+	{
+		const auto timer_source = timer_irq_source(timer);
+		if (!timer_irq_bankswitch(timer_source))
+			return false;
+
+		const u8 vector = special_irq_vector(source);
+		const u16 vector_addr = interrupt_vector_address(vector);
+		const u16 vector_word = mem_read_word(vector_addr);
+		const u8 override_bank = m_timer_irq_bank[timer];
+		const u8 bank = (override_bank == 0xff) ? u8(vector_word & 0x000f) : override_bank;
+		const u8 ic = timer_irq_ic(timer_source);
+		m_timer_irq_pending[timer] = false;
+		m_timer_irq_in_service[timer] = true;
+		mark_special_irq_in_service(source);
+		m_sfr[ic] &= ~u8(0x80);
+		update_internal_serial_irq_line();
+		v55_interrupt_bankswitch(bank);
+		return true;
+	}
+
+	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	{
+		if (!adc_irq_bankswitch())
+			return false;
+
+		const u8 bank = adc_irq_bank();
+		m_adc_irq_pending = false;
+		m_adc_irq_in_service = true;
+		mark_special_irq_in_service(source);
+		m_sfr[0x0e5] &= ~u8(0x80);
+		update_internal_serial_irq_line();
+		v55_interrupt_bankswitch(bank);
+		return true;
+	}
+
+	const auto serial_source = serial_irq_source(source);
+	if (!internal_serial_irq_bankswitch(serial_source))
+		return false;
+
+	const u8 bank = internal_serial_irq_bank(serial_source);
+	m_internal_serial_irq_pending &= ~u8(1U << source);
+	m_internal_serial_irq_in_service |= u8(1U << source);
+	mark_special_irq_in_service(source);
+	v55_interrupt_bankswitch(bank);
+	update_internal_serial_irq_line();
+	return true;
+}
+
+void v55_device::v55_fint()
+{
+	nec_common_device::v55_fint();
+
+	const int source = current_internal_special_irq_source();
+	if (source < 0)
+	{
+		update_internal_serial_irq_line();
+		return;
+	}
+
+	const int timer = timer_irq_index_from_source(source);
+	if (timer >= 0)
+	{
+		const int popped = (current_special_irq_stack_source() >= 0) ? pop_special_irq_stack_source() : source;
+		clear_special_irq_source(popped);
+		update_internal_serial_irq_line();
+		return;
+	}
+
+	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	{
+		const int popped = (current_special_irq_stack_source() >= 0) ? pop_special_irq_stack_source() : source;
+		clear_special_irq_source(popped);
+		update_internal_serial_irq_line();
+		return;
+	}
+
+	const int popped = (current_special_irq_stack_source() >= 0) ? pop_special_irq_stack_source() : source;
+	clear_special_irq_source(popped);
+	if (popped >= 0 && popped < SERIAL_IRQ_COUNT)
+	{
+		update_internal_serial_irq_line();
+	}
+}
+
+void v55_device::sfr_map(address_map &map)
+{
+	map(0x000, 0x1ef).rw(FUNC(v55_device::sfr_r), FUNC(v55_device::sfr_w));
+}
+
+u8 v55_device::port_r(unsigned port)
+{
+	const unsigned offset = 0x100 + port;
+	if (port == 2)
+	{
+		const u8 latch = m_sfr[offset];
+		const u8 pins = !m_port_in_cb[port].isunset() ? m_port_in_cb[port]() : 0xff;
+		const u8 pm2 = m_sfr[0x112];
+		const u8 pmc2 = m_sfr[0x122];
+		const bool prdc_pin_mode = BIT(m_sfr[0x10c], 0);
+		u8 data = 0;
+
+		for (unsigned bit = 0; bit < 8; bit++)
+		{
+			const u8 mask = u8(1U << bit);
+			if (BIT(pmc2, bit))
+			{
+				// Control-function readback is not fully modeled yet.  Use the
+				// board-visible pin callback for now rather than the port latch.
+				data |= pins & mask;
+			}
+			else if (BIT(pm2, bit))
+			{
+				// Input port: PRDC=0 reads pins; PRDC=1 reads zero.
+				if (!prdc_pin_mode)
+					data |= pins & mask;
+			}
+			else
+			{
+				// Output port: PRDC=0 reads latch; PRDC=1 reads pins.
+				data |= (prdc_pin_mode ? pins : latch) & mask;
+			}
+		}
+
+		return data;
+	}
+	if (!m_port_in_cb[port].isunset())
+		m_sfr[offset] = m_port_in_cb[port]();
+	return m_sfr[offset];
+}
+
+void v55_device::port_w(unsigned port, u8 data)
+{
+	const unsigned offset = 0x100 + port;
+	m_sfr[offset] = data;
+	if (port == 2)
+		update_port2_output();
+	else if (!m_port_out_cb[port].isunset())
+		m_port_out_cb[port](data);
+}
+
+bool v55_device::port2_output_enabled() const
+{
+	// P2 is a six-bit port.  In port mode (PMC2 bit clear), PM2 bit clear
+	// selects output.  Control-function outputs are not driven through the
+	// generic port callback.
+	return ((~m_sfr[0x122] & ~m_sfr[0x112] & 0x3f) != 0);
+}
+
+void v55_device::update_port2_output()
+{
+	if (!m_port_out_cb[2].isunset() && port2_output_enabled())
+		m_port_out_cb[2](m_sfr[0x102]);
+}
+
+u8 v55_device::timer_irq_ic(timer_irq_source source) const
+{
+	return (source == TIMER_IRQ_INTCM21) ? 0x0d4 : 0x0d5;
+}
+
+u8 v55_device::timer_irq_vector(timer_irq_source source) const
+{
+	return (source == TIMER_IRQ_INTCM21) ? 20 : 21;
+}
+
+u16 v55_device::timer_compare(timer_irq_source source) const
+{
+	const u16 offset = (source == TIMER_IRQ_INTCM21) ? 0x15a : 0x166;
+	return u16(m_sfr[offset] | (u16(m_sfr[offset + 1]) << 8));
+}
+
+u8 v55_device::timer_control_enable_bit(timer_irq_source source) const
+{
+	return (source == TIMER_IRQ_INTCM21) ? 3 : 7;
+}
+
+u8 v55_device::timer_control_prescale_bit(timer_irq_source source) const
+{
+	return (source == TIMER_IRQ_INTCM21) ? 0 : 4;
+}
+
+attotime v55_device::timer_tick_period(timer_irq_source source) const
+{
+	const u8 tmc1 = m_sfr[0x131];
+	const u8 ce_bit = timer_control_enable_bit(source);
+	if (!BIT(tmc1, ce_bit))
+		return attotime::never;
+
+	// V55PI hardware manual: TMC1 controls TM2/TM3, CE starts counting, PRM
+	// selects phi/8 or phi/32, and compare interval uses the compare value + 1.
+	const u8 prm_bit = timer_control_prescale_bit(source);
+	const double divider = BIT(tmc1, prm_bit) ? 32.0 : 8.0;
+	const double tick_hz = double(clock()) / divider;
+	return attotime::from_hz(tick_hz / double(timer_compare(source) + 1));
+}
+
+void v55_device::update_timer(timer_irq_source source)
+{
+	const unsigned timer = unsigned(source);
+	if (m_timer[timer] == nullptr)
+		return;
+
+	const attotime period = timer_tick_period(source);
+	if (period.is_never())
+		m_timer[timer]->adjust(attotime::never);
+	else
+		m_timer[timer]->adjust(period, int(source), period);
+}
+
+bool v55_device::timer_irq_experiment_enabled() const
+{
+	return m_timer_irq_experiment;
+}
+
+bool v55_device::timer_irq_enabled(timer_irq_source source) const
+{
+	if (!timer_irq_experiment_enabled())
+		return false;
+
+	return !BIT(m_sfr[timer_irq_ic(source)], 6);
+}
+
+bool v55_device::timer_irq_bankswitch(timer_irq_source source) const
+{
+	return BIT(m_sfr[timer_irq_ic(source)], 4);
+}
+
+u8 v55_device::timer_irq_priority(timer_irq_source source) const
+{
+	return m_sfr[timer_irq_ic(source)] & 0x03;
+}
+
+bool v55_device::adc_irq_experiment_enabled() const
+{
+	return m_adc_irq_experiment;
+}
+
+bool v55_device::adc_irq_enabled() const
+{
+	return adc_irq_experiment_enabled() && !BIT(m_sfr[0x0e5], 6);
+}
+
+bool v55_device::adc_irq_bankswitch() const
+{
+	return BIT(m_sfr[0x0e5], 4);
+}
+
+u8 v55_device::adc_irq_priority() const
+{
+	return m_sfr[0x0e5] & 0x03;
+}
+
+u8 v55_device::adc_irq_bank()
+{
+	return (m_adc_irq_bank == 0xff) ? interrupt_vector_bank(37) : m_adc_irq_bank;
+}
+
+void v55_device::request_timer_irq(timer_irq_source source)
+{
+	if (!timer_irq_experiment_enabled())
+		return;
+
+	const unsigned timer = unsigned(source);
+	const u8 ic = timer_irq_ic(source);
+	m_timer_irq_pending[timer] = true;
+	m_sfr[ic] |= 0x80;
+	update_internal_serial_irq_line();
+}
+
+void v55_device::request_adc_irq()
+{
+	const bool experiment = adc_irq_experiment_enabled();
+	const bool masked = BIT(m_sfr[0x0e5], 6);
+	if (!experiment || masked)
+	{
+		return;
+	}
+	if (m_adc_irq_pending)
+	{
+		return;
+	}
+	if (m_adc_irq_in_service)
+	{
+		return;
+	}
+
+	m_adc_irq_pending = true;
+	m_sfr[0x0e5] |= 0x80;
+	update_internal_serial_irq_line();
+}
+
+TIMER_CALLBACK_MEMBER(v55_device::timer_tick)
+{
+	const unsigned timer = unsigned(param);
+	if (timer < TIMER_IRQ_COUNT && !timer_tick_period(timer_irq_source(timer)).is_never())
+	{
+		const auto source = timer_irq_source(timer);
+		request_timer_irq(source);
+	}
+}
+
+attotime v55_device::adc_tick_period() const
+{
+	// V55PI hardware manual (U10514EJ5V0UM00) Table 13-1: for an internal
+	// system clock in the 8-16 MHz range, conversion takes 160 clock cycles.
+	return attotime::from_ticks(160, clock());
+}
+
+void v55_device::update_adc_results()
+{
+	const u8 adm = m_sfr[0x020];
+	if (!BIT(adm, 7))
+		return;
+	if (adc_irq_experiment_enabled() && (m_adc_irq_pending || m_adc_irq_in_service))
+		return;
+
+	const bool select_mode = BIT(adm, 0);
+	const u8 channel = (adm >> 1) & 0x03;
+	const bool scan_mode = !select_mode;
+	if (scan_mode)
+	{
+		for (u8 ch = 0; ch <= channel; ch++)
+			m_sfr[ch << 1] = m_adc_in_cb[ch]();
+	}
+	else
+	{
+		m_sfr[channel << 1] = m_adc_in_cb[channel]();
+	}
+
+	request_adc_irq();
+}
+
+void v55_device::update_adc_timer()
+{
+	const u8 adm = m_sfr[0x020];
+	const bool enable = BIT(adm, 7);
+	m_adc_running = enable;
+
+	if (m_adc_timer == nullptr)
+		return;
+
+	if (enable)
+	{
+		m_adc_timer->adjust(adc_tick_period(), 0, adc_tick_period());
+	}
+	else
+	{
+		m_adc_timer->adjust(attotime::never);
+	}
+}
+
+TIMER_CALLBACK_MEMBER(v55_device::adc_tick)
+{
+	update_adc_results();
+}
+
+u8 v55_device::sfr_r(offs_t offset)
+{
+	offset &= 0x1ff;
+
+	switch (offset)
+	{
+	case 0x000:
+	case 0x002:
+	case 0x004:
+	case 0x006:
+		return m_sfr[offset];
+	case 0x100: return port_r(0);
+	case 0x101: return port_r(1);
+	case 0x102: return port_r(2);
+	case 0x103: return port_r(3);
+	case 0x104: return port_r(4);
+	case 0x105: return port_r(5);
+	case 0x106: return port_r(6);
+	case 0x107: return port_r(7);
+	case 0x108: return port_r(8);
+	case 0x174:
+		update_uart0_status();
+		return m_sfr[0x174];
+	case 0x176:
+		update_uart0_status();
+		if (!machine().side_effects_disabled())
+		{
+			m_uart0_rx_full = false;
+		}
+		return m_sfr[0x176];
+	case 0x17c:
+		update_uart1_status();
+		return m_sfr[0x17c];
+	case 0x17e:
+		update_uart1_status();
+		if (!machine().side_effects_disabled())
+			m_uart1_rx_full = false;
+		return m_sfr[0x17e];
+	}
+
+	return m_sfr[offset];
+}
+
+void v55_device::sfr_w(offs_t offset, u8 data)
+{
+	offset &= 0x1ff;
+
+	const u8 old = m_sfr[offset];
+	m_sfr[offset] = data;
+	if ((offset >= 0x0da) && (offset <= 0x0df) && !BIT(data, 7))
+	{
+		const u8 mask = u8(1U << (offset - 0x0da));
+		m_internal_serial_irq_pending &= ~mask;
+		m_internal_serial_irq_in_service &= ~mask;
+		update_internal_serial_irq_line();
+	}
+	if ((offset == 0x0d4 || offset == 0x0d5) && !BIT(data, 7))
+	{
+		const unsigned timer = offset - 0x0d4;
+		m_timer_irq_pending[timer] = false;
+		m_timer_irq_in_service[timer] = false;
+		update_internal_serial_irq_line();
+	}
+	if ((offset == 0x0e5) && !BIT(data, 7))
+	{
+		m_adc_irq_pending = false;
+		m_adc_irq_in_service = false;
+		update_internal_serial_irq_line();
+	}
+
+	switch (offset)
+	{
+	case 0x020:
+		update_adc_timer();
+		break;
+	case 0x100: port_w(0, data); break;
+	case 0x102: port_w(2, data); break;
+	case 0x103: port_w(3, data); break;
+	case 0x104: port_w(4, data); break;
+	case 0x105: port_w(5, data); break;
+	case 0x107: port_w(7, data); break;
+	case 0x108: port_w(8, data); break;
+	case 0x112:
+	case 0x122:
+		update_port2_output();
+		break;
+	case 0x173:
+		update_uart0_status();
+		if (BIT(data, 7) && !BIT(old, 7) && uart0_tx_enabled())
+		{
+			if (m_uart0_tx_loaded)
+				start_uart0_tx();
+			else
+				request_internal_serial_irq(SERIAL_IRQ_INTST0);
+		}
+		break;
+	case 0x175:
+		m_uart0_tx_loaded = true;
+		m_sfr[0x174] &= ~u8(0x80);
+		update_uart0_status();
+		if (!m_uart0_tx_active && uart0_tx_enabled())
+			start_uart0_tx();
+		break;
+	case 0x17b:
+		if (BIT(data, 7))
+			start_uart1_tx();
+		update_uart1_status();
+		break;
+	case 0x17d:
+		m_uart1_tx_loaded = true;
+		if (BIT(m_sfr[0x17b], 7))
+			start_uart1_tx();
+		update_uart1_status();
+		break;
+	case 0x17e:
+		m_uart1_rx_full = false;
+		update_uart1_status();
+		break;
+	case 0x131:
+		update_timer(TIMER_IRQ_INTCM21);
+		update_timer(TIMER_IRQ_INTCM31);
+		break;
+	case 0x144:
+	case 0x145:
+	case 0x15a:
+	case 0x15b:
+		update_timer(TIMER_IRQ_INTCM21);
+		break;
+	case 0x146:
+	case 0x147:
+	case 0x166:
+	case 0x167:
+		update_timer(TIMER_IRQ_INTCM31);
+		break;
+	}
+}
+
+void v55_device::device_start()
+{
+	v53_device::device_start();
+
+	for (unsigned timer = 0; timer < TIMER_IRQ_COUNT; timer++)
+		m_timer[timer] = timer_alloc(FUNC(v55_device::timer_tick), this);
+	m_adc_timer = timer_alloc(FUNC(v55_device::adc_tick), this);
+	m_uart0_tx_timer = timer_alloc(FUNC(v55_device::uart0_tx_tick), this);
+	m_uart0_rx_timer = timer_alloc(FUNC(v55_device::uart0_rx_tick), this);
+	m_uart1_tx_timer = timer_alloc(FUNC(v55_device::uart1_tx_tick), this);
+	m_uart1_rx_timer = timer_alloc(FUNC(v55_device::uart1_rx_tick), this);
+
+	save_item(NAME(m_sfr));
+	save_item(NAME(m_adc_running));
+	save_item(NAME(m_rxd0));
+	save_item(NAME(m_cts0));
+	save_item(NAME(m_uart0_txd_state));
+	save_item(NAME(m_uart0_tx_byte));
+	save_item(NAME(m_uart0_tx_bit));
+	save_item(NAME(m_uart0_rx_byte));
+	save_item(NAME(m_uart0_rx_bit));
+	save_item(NAME(m_uart0_rx_prev));
+	save_item(NAME(m_uart0_tx_active));
+	save_item(NAME(m_uart0_tx_loaded));
+	save_item(NAME(m_uart0_rx_active));
+	save_item(NAME(m_uart0_rx_full));
+	save_item(NAME(m_rxd1));
+	save_item(NAME(m_cts1));
+	save_item(NAME(m_uart1_txd_state));
+	save_item(NAME(m_uart1_tx_byte));
+	save_item(NAME(m_uart1_tx_bit));
+	save_item(NAME(m_uart1_rx_byte));
+	save_item(NAME(m_uart1_rx_bit));
+	save_item(NAME(m_uart1_rx_prev));
+	save_item(NAME(m_uart1_tx_active));
+	save_item(NAME(m_uart1_tx_loaded));
+	save_item(NAME(m_uart1_rx_active));
+	save_item(NAME(m_uart1_rx_full));
+	save_item(NAME(m_timer_irq_bank));
+	save_item(NAME(m_timer_irq_pending));
+	save_item(NAME(m_timer_irq_in_service));
+	save_item(NAME(m_adc_irq_pending));
+	save_item(NAME(m_adc_irq_in_service));
+	save_item(NAME(m_internal_serial_irq_pending));
+	save_item(NAME(m_internal_serial_irq_in_service));
+	save_item(NAME(m_special_irq_stack));
+	save_item(NAME(m_special_irq_stack_depth));
+	m_serial_irq_mode = m_default_serial_irq_mode;
+	// KPSHIP-BAKE: shipping default = m_default_serial_irq_mode (driver sets rx0_rx1). SHARED NEC core:
+	// deleting this getenv is bit-exact (golden rendered unset) AND removes an upstream-blocking env knob.
+	// Also collapse the 6-way serial_irq_mode enum to the one shipping mode. (Whether rx0_rx1 is the true
+	// hw model is a KPSHIP-ACCURACY question, see korgprophecy.cpp set_serial_irq_mode.)
+	if (const char *const env = std::getenv("KPROP_V55_SERIAL_BANKSW_EXPERIMENT"))
+	{
+		if (env[0] && std::strcmp(env, "0"))
+		{
+			if (!std::strcmp(env, "tx0"))
+				m_serial_irq_mode = serial_irq_mode::tx0_only;
+			else if (!std::strcmp(env, "rx0"))
+				m_serial_irq_mode = serial_irq_mode::rx0_only;
+			else if (!std::strcmp(env, "rx0rx1"))
+				m_serial_irq_mode = serial_irq_mode::rx0_rx1;
+			else if (!std::strcmp(env, "rx0late"))
+				m_serial_irq_mode = serial_irq_mode::rx0_late_tx0;
+			else if (!std::strcmp(env, "rx0tx0"))
+				m_serial_irq_mode = serial_irq_mode::rx0_tx0;
+			else
+				m_serial_irq_mode = serial_irq_mode::broad;
+		}
+	}
+	// KPSHIP-BAKE: shared-core knob; delete (bit-exact) and rename m_timer_irq_experiment off "experiment".
+	if (const char *const env = std::getenv("KPROP_V55_TM2_BANKSW_EXPERIMENT"))
+		m_timer_irq_experiment = env[0] && std::strcmp(env, "0");
+	// KPSHIP-BAKE: forced-bank override; default (unset) = vector-table-derived is the model. Delete.
+	if (const char *const env = std::getenv("KPROP_V55_TM2_BANK"))
+	{
+		const long bank = std::strtol(env, nullptr, 0);
+		if (bank >= 0 && bank <= 15)
+			m_timer_irq_bank[unsigned(TIMER_IRQ_INTCM21)] = u8(bank);
+	}
+	// KPSHIP-BAKE: forced-bank override; default (unset) = vector-table-derived is the model. Delete.
+	if (const char *const env = std::getenv("KPROP_V55_TM3_BANK"))
+	{
+		const long bank = std::strtol(env, nullptr, 0);
+		if (bank >= 0 && bank <= 15)
+			m_timer_irq_bank[unsigned(TIMER_IRQ_INTCM31)] = u8(bank);
+	}
+	// INTAD is normal V55PI hardware behavior.  Keep the environment override
+	// only for forced-bank comparison or explicitly disabling the model.
+	// KPSHIP-BAKE: comment says INTAD is normal V55PI behavior; delete (bit-exact), rename m_adc_irq_experiment.
+	if (const char *const env = std::getenv("KPROP_V55_ADC_BANKSW_EXPERIMENT"))
+	{
+		m_adc_irq_experiment = env[0] && std::strcmp(env, "0");
+		m_adc_irq_bank = 0xff;
+		if (m_adc_irq_experiment)
+		{
+			char *end = nullptr;
+			const long bank = std::strtol(env, &end, 0);
+			if (end != env && *end == '\0' && bank >= 0 && bank <= 15)
+				m_adc_irq_bank = u8(bank);
+		}
+	}
+}
+
+void v55_device::device_reset()
+{
+	v53_device::device_reset();
+
+	m_sfr.fill(0x00);
+	m_sfr[0x0c5] = 0x80;
+	m_sfr[0x112] = 0xff;
+	m_sfr[0x174] = 0x20;
+	m_rxd0 = 1;
+	m_cts0 = 0;
+	m_uart0_txd_state = 1;
+	m_uart0_tx_byte = 0x00;
+	m_uart0_tx_bit = 0x00;
+	m_uart0_rx_byte = 0x00;
+	m_uart0_rx_bit = 0x00;
+	m_uart0_rx_prev = 1;
+	m_uart0_tx_active = false;
+	m_uart0_tx_loaded = false;
+	m_uart0_rx_active = false;
+	m_uart0_rx_full = false;
+	m_rxd1 = 1;
+	m_cts1 = 0;
+	m_uart1_txd_state = 1;
+	m_uart1_tx_byte = 0x00;
+	m_uart1_tx_bit = 0x00;
+	m_uart1_rx_byte = 0x00;
+	m_uart1_rx_bit = 0x00;
+	m_uart1_rx_prev = 1;
+	m_uart1_tx_active = false;
+	m_uart1_tx_loaded = false;
+	m_uart1_rx_active = false;
+	m_uart1_rx_full = false;
+	m_adc_running = false;
+	m_timer_irq_pending.fill(false);
+	m_timer_irq_in_service.fill(false);
+	m_adc_irq_pending = false;
+	m_adc_irq_in_service = false;
+	m_internal_serial_irq_pending = 0x00;
+	m_internal_serial_irq_in_service = 0x00;
+	m_special_irq_stack.fill(0xff);
+	m_special_irq_stack_depth = 0;
+	for (unsigned timer = 0; timer < TIMER_IRQ_COUNT; timer++)
+		update_timer(timer_irq_source(timer));
+	update_uart0_status();
+	update_uart1_status();
+	update_internal_serial_irq_line();
+	m_txd0_handler(1);
+	m_txd1_handler(1);
+	for (emu_timer *timer : m_timer)
+		if (timer != nullptr)
+			timer->adjust(attotime::never);
+	if (m_adc_timer != nullptr)
+		m_adc_timer->adjust(attotime::never);
+	if (m_uart0_tx_timer != nullptr)
+		m_uart0_tx_timer->adjust(attotime::never);
+	if (m_uart0_rx_timer != nullptr)
+		m_uart0_rx_timer->adjust(attotime::never);
+	if (m_uart1_tx_timer != nullptr)
+		m_uart1_tx_timer->adjust(attotime::never);
+	if (m_uart1_rx_timer != nullptr)
+		m_uart1_rx_timer->adjust(attotime::never);
+
+}
+
+void v55_device::rxd_w(int state)
+{
+	state = state ? 1 : 0;
+
+	if (!m_uart0_rx_active && m_uart0_rx_prev == 1 && state == 0)
+	{
+		m_uart0_rx_active = true;
+		m_uart0_rx_byte = 0x00;
+		m_uart0_rx_bit = 0x00;
+		if (m_uart0_rx_timer != nullptr)
+			m_uart0_rx_timer->adjust(uart0_bit_period() + uart0_bit_period() / 2);
+	}
+
+	m_rxd0 = u8(state);
+	m_uart0_rx_prev = u8(state);
+}
+
+void v55_device::inject_uart0_rx_byte(u8 data)
+{
+	if (m_uart0_rx_full)
+	{
+		m_sfr[0x174] |= 0x01;
+		request_internal_serial_irq(SERIAL_IRQ_INTSER0);
+	}
+	else
+	{
+		m_sfr[0x176] = data;
+		m_uart0_rx_full = true;
+		request_internal_serial_irq(SERIAL_IRQ_INTSR0);
+	}
+
+	update_uart0_status();
+}
+
+void v55_device::cts_w(int state)
+{
+	const u8 old_cts = m_cts0;
+	m_cts0 = state ? 1 : 0;
+	update_uart0_status();
+	if (old_cts && !m_cts0 && uart0_tx_enabled())
+	{
+		if (m_uart0_tx_loaded)
+			start_uart0_tx();
+		else
+			request_internal_serial_irq(SERIAL_IRQ_INTST0);
+	}
+}
+
+attotime v55_device::uart0_bit_period() const
+{
+	// Channel 0 is the primary board link on Prophecy. Until the full
+	// TXBRG/RXBRG/PRS decode is modeled, use the driver-configured rate
+	// (must track the H8 SCI0 rate; 41,667 was the observed rate with the
+	// H8 modeled at 16 MHz).
+	return attotime::from_hz(m_uart0_bit_rate);
+}
+
+void v55_device::update_uart0_status()
+{
+	// V55PI 7.4.5: AS(7), WUPR(6), TxBE(5), RxBF(4), ERP(2), ERF(1), ERO(0).
+	// TxBE describes the transmit buffer, not the shift register.
+	u8 status = m_sfr[0x174] & 0x87;
+
+	if (!m_uart0_tx_loaded)
+		status |= 0x20;
+	if (m_uart0_rx_full)
+		status |= 0x10;
+
+	m_sfr[0x174] = status;
+}
+
+bool v55_device::uart0_tx_enabled() const
+{
+	return BIT(m_sfr[0x173], 7) && !m_cts0;
+}
+
+void v55_device::start_uart0_tx()
+{
+	if (m_uart0_tx_active || !m_uart0_tx_loaded || !uart0_tx_enabled())
+	{
+		update_uart0_status();
+		return;
+	}
+
+	// TxB0 -> shift-register transfer empties the buffer and raises INTST0.
+	m_uart0_tx_active = true;
+	m_uart0_tx_loaded = false;
+	m_uart0_tx_byte = m_sfr[0x175];
+	m_uart0_tx_bit = 0x00;
+	m_uart0_txd_state = 0;
+	m_txd0_handler(0);
+	update_uart0_status();
+	request_internal_serial_irq(SERIAL_IRQ_INTST0);
+	if (m_uart0_tx_timer != nullptr)
+		m_uart0_tx_timer->adjust(uart0_bit_period());
+}
+
+TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
+{
+	if (!m_uart0_tx_active)
+		return;
+
+	if (m_uart0_tx_bit < 8)
+	{
+		m_uart0_txd_state = BIT(m_uart0_tx_byte, m_uart0_tx_bit);
+		m_txd0_handler(m_uart0_txd_state);
+		m_uart0_tx_bit++;
+		m_uart0_tx_timer->adjust(uart0_bit_period());
+		return;
+	}
+
+	if (m_uart0_tx_bit == 8)
+	{
+		m_uart0_txd_state = 1;
+		m_txd0_handler(1);
+		m_uart0_tx_bit++;
+		m_uart0_tx_timer->adjust(uart0_bit_period());
+		return;
+	}
+
+	m_uart0_tx_active = false;
+	update_uart0_status();
+	m_uart0_tx_timer->adjust(attotime::never);
+	if (m_uart0_tx_loaded)
+	{
+		start_uart0_tx();
+	}
+	else if (uart0_tx_enabled() && BIT(m_sfr[0x173], 1))
+	{
+		m_sfr[0x174] |= 0x80;
+		request_internal_serial_irq(SERIAL_IRQ_INTST0);
+	}
+}
+
+TIMER_CALLBACK_MEMBER(v55_device::uart0_rx_tick)
+{
+	if (!m_uart0_rx_active)
+		return;
+
+	if (m_uart0_rx_bit < 8)
+	{
+		if (m_rxd0)
+			m_uart0_rx_byte |= u8(1U << m_uart0_rx_bit);
+		m_uart0_rx_bit++;
+		m_uart0_rx_timer->adjust(uart0_bit_period());
+		return;
+	}
+
+	m_uart0_rx_active = false;
+	if (m_rxd0)
+	{
+		m_sfr[0x176] = m_uart0_rx_byte;
+		m_uart0_rx_full = true;
+		request_internal_serial_irq(SERIAL_IRQ_INTSR0);
+	}
+	else
+	{
+		m_sfr[0x174] |= 0x02;
+		request_internal_serial_irq(SERIAL_IRQ_INTSER0);
+	}
+	update_uart0_status();
+	m_uart0_rx_timer->adjust(attotime::never);
+}
+
+void v55_device::rxd1_w(int state)
+{
+	state = state ? 1 : 0;
+
+	if (!m_uart1_rx_active && m_uart1_rx_prev == 1 && state == 0)
+	{
+		m_uart1_rx_active = true;
+		m_uart1_rx_byte = 0x00;
+		m_uart1_rx_bit = 0x00;
+		if (m_uart1_rx_timer != nullptr)
+			m_uart1_rx_timer->adjust(uart1_bit_period() + uart1_bit_period() / 2);
+	}
+
+	m_rxd1 = u8(state);
+	m_uart1_rx_prev = u8(state);
+}
+
+void v55_device::cts1_w(int state)
+{
+	m_cts1 = state ? 1 : 0;
+	update_uart1_status();
+	if (!m_cts1)
+		start_uart1_tx();
+}
+
+attotime v55_device::uart1_bit_period() const
+{
+	// The Prophecy firmware programs UART1 as a MIDI/SysEx transport, so a
+	// conservative fixed 31.25 kbaud approximation is preferable to the old
+	// always-ready stub until the full PRS/UARTM decode is modeled.
+	return attotime::from_hz(31'250);
+}
+
+void v55_device::update_uart1_status()
+{
+	u8 status = m_sfr[0x17c] & 0x03;
+
+	if (!m_cts1 && !m_uart1_tx_active)
+		status |= 0x20;
+	if (m_uart1_rx_full)
+		status |= 0x40;
+
+	m_sfr[0x17c] = status;
+}
+
+void v55_device::start_uart1_tx()
+{
+	if (m_uart1_tx_active || m_cts1 || !BIT(m_sfr[0x17b], 7) || !m_uart1_tx_loaded)
+	{
+		update_uart1_status();
+		return;
+	}
+
+	m_uart1_tx_active = true;
+	m_uart1_tx_byte = m_sfr[0x17d];
+	m_uart1_tx_loaded = false;
+	m_uart1_tx_bit = 0x00;
+	m_uart1_txd_state = 0;
+	m_txd1_handler(0);
+	update_uart1_status();
+	if (m_uart1_tx_timer != nullptr)
+		m_uart1_tx_timer->adjust(uart1_bit_period());
+}
+
+TIMER_CALLBACK_MEMBER(v55_device::uart1_tx_tick)
+{
+	if (!m_uart1_tx_active)
+		return;
+
+	if (m_uart1_tx_bit < 8)
+	{
+		m_uart1_txd_state = BIT(m_uart1_tx_byte, m_uart1_tx_bit);
+		m_txd1_handler(m_uart1_txd_state);
+		m_uart1_tx_bit++;
+		m_uart1_tx_timer->adjust(uart1_bit_period());
+		return;
+	}
+
+	if (m_uart1_tx_bit == 8)
+	{
+		m_uart1_txd_state = 1;
+		m_txd1_handler(1);
+		m_uart1_tx_bit++;
+		m_uart1_tx_timer->adjust(uart1_bit_period());
+		return;
+	}
+
+	m_uart1_tx_active = false;
+	update_uart1_status();
+	m_uart1_tx_timer->adjust(attotime::never);
+	request_internal_serial_irq(SERIAL_IRQ_INTST1);
+}
+
+TIMER_CALLBACK_MEMBER(v55_device::uart1_rx_tick)
+{
+	if (!m_uart1_rx_active)
+		return;
+
+	if (m_uart1_rx_bit < 8)
+	{
+		if (m_rxd1)
+			m_uart1_rx_byte |= u8(1U << m_uart1_rx_bit);
+		m_uart1_rx_bit++;
+		m_uart1_rx_timer->adjust(uart1_bit_period());
+		return;
+	}
+
+	m_uart1_rx_active = false;
+	if (m_rxd1)
+	{
+		m_sfr[0x17e] = m_uart1_rx_byte;
+		m_uart1_rx_full = true;
+		request_internal_serial_irq(SERIAL_IRQ_INTSR1);
+	}
+	else
+	{
+		m_sfr[0x17c] |= 0x02;
+		request_internal_serial_irq(SERIAL_IRQ_INTSER1);
+	}
+	update_uart1_status();
+	m_uart1_rx_timer->adjust(attotime::never);
+}
+
+device_memory_interface::space_config_vector v55_device::memory_space_config() const
+{
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM,     &m_program_config),
+		std::make_pair(AS_DATA,        &m_sfr_config),
+		std::make_pair(AS_IO,          &m_io_config),
+		std::make_pair(AS_INTERNAL_IO, &m_internal_io_config)
+	};
+}
+
+bool v55_device::memory_translate(int spacenum, int intention, offs_t &address, address_space *&target_space)
+{
+	if (spacenum == AS_PROGRAM)
+	{
+		address = v33_translate(address);
+		if ((intention != TR_FETCH) && (address >= 0x0ffe00) && (address <= 0x0fffef))
+		{
+			address &= 0x1ff;
+			target_space = &space(AS_DATA);
+			return true;
+		}
+	}
+
+	target_space = &space(spacenum);
+	return true;
+}
+
+u8 v55_device::mem_read_byte(offs_t a)
+{
+	const offs_t phys = v33_translate(a);
+	if ((phys >= 0x0ffe00) && (phys <= 0x0fffef))
+		return space(AS_DATA).read_byte(phys & 0x1ff);
+
+	return v53_device::mem_read_byte(a);
+}
+
+u16 v55_device::mem_read_word(offs_t a)
+{
+	const offs_t phys = v33_translate(a);
+	if ((phys >= 0x0ffe00) && (phys <= 0x0fffef))
+		return space(AS_DATA).read_word_unaligned(phys & 0x1ff);
+
+	return v53_device::mem_read_word(a);
+}
+
+void v55_device::mem_write_byte(offs_t a, u8 v)
+{
+	const offs_t phys = v33_translate(a);
+	if ((phys >= 0x0ffe00) && (phys <= 0x0fffef))
+	{
+		space(AS_DATA).write_byte(phys & 0x1ff, v);
+		return;
+	}
+
+	v53_device::mem_write_byte(a, v);
+}
+
+void v55_device::mem_write_word(offs_t a, u16 v)
+{
+	const offs_t phys = v33_translate(a);
+	if ((phys >= 0x0ffe00) && (phys <= 0x0fffef))
+	{
+		space(AS_DATA).write_word_unaligned(phys & 0x1ff, v);
+		return;
+	}
+
+	v53_device::mem_write_word(a, v);
 }

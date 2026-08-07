@@ -163,9 +163,9 @@ end
 		ext_lib("jpeg"),
 		"7z",
 	}
-if CPU_INCLUDE_DRC_NATIVE then
+if CPU_INCLUDE_DRC_NATIVE or CPUS["TMS57002"] then
 	links {
-		"asmjit",
+		"asmjit",   -- TMS57002 DSP dynarec (KPROP_DSP_PERFRAME=4) uses asmjit even without a DRC-native CPU
 	}
 end
 if (STANDALONE~=true) then

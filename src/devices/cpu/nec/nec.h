@@ -7,6 +7,7 @@
 #pragma once
 
 #include "necdasm.h"
+#include <array>
 
 #define NEC_INPUT_LINE_POLL 20
 
@@ -28,7 +29,7 @@ class nec_common_device : public cpu_device, public nec_disassembler::config
 
 protected:
 	// construction/destruction
-	nec_common_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, bool is_16bit, uint8_t prefetch_size, uint8_t prefetch_cycles, uint32_t chip_type, bool has_div_quirk, address_map_constructor internal_port_map = address_map_constructor());
+	nec_common_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, bool is_16bit, uint8_t prefetch_size, uint8_t prefetch_cycles, uint32_t chip_type, bool has_div_quirk, address_map_constructor internal_port_map = address_map_constructor(), bool v55_extensions = false);
 
 	// device-level overrides
 	virtual void device_start() override ATTR_COLD;
@@ -58,10 +59,39 @@ protected:
 	virtual u16 io_read_word(offs_t a) { return m_io->read_word_unaligned(a); }
 	virtual void io_write_byte(offs_t a, u8 v) { m_io->write_byte(a, v); }
 	virtual void io_write_word(offs_t a, u16 v) { m_io->write_word_unaligned(a, v); }
+	virtual u8 mem_read_byte(offs_t a);
+	virtual u16 mem_read_word(offs_t a);
+	virtual void mem_write_byte(offs_t a, u8 v);
+	virtual void mem_write_word(offs_t a, u16 v);
 
 	void set_int_line(int state);
 	void set_nmi_line(int state);
 	void set_poll_line(int state);
+	virtual bool handle_special_int_ack();
+	void v55_store_current_bank();
+	void v55_load_bank(u8 bank);
+	void v55_interrupt_bankswitch(u8 bank);
+	void v55_retrbi();
+	virtual void v55_fint();
+	void v55_movspa();
+	u16 v55_compress_psw() const;
+	void v55_expand_psw(u16 psw);
+	u16 v55_file_word(u8 bank, u8 offset) const;
+	void v55_set_file_word(u8 bank, u8 offset, u16 data);
+	u8 v55_current_bank() const { return m_v55_rb; }
+	u16 debug_psw_value() const;
+	u8 debug_ie_flag() const { return m_IF; }
+	u8 debug_brk_flag() const { return m_TF; }
+	u8 debug_no_interrupt_window() const { return m_no_interrupt; }
+	u32 debug_pending_irq_bits() const { return m_pending_irq; }
+	u8 debug_iram_byte(u16 address) const { return m_iram[address & 0x01ff]; }
+	u16 debug_iram_word(u16 address) const
+	{
+		const u16 addr = address & 0x01ff;
+		return u16(m_iram[addr] | (m_iram[(addr + 1) & 0x01ff] << 8));
+	}
+	u16 debug_ds2_value() const { return m_ds2; }
+	u16 debug_ds3_value() const { return m_ds3; }
 
 	address_space_config m_program_config;
 	address_space_config m_io_config;
@@ -118,6 +148,12 @@ private:
 	const uint32_t m_chip_type;
 	// https://github.com/mamedev/mame/pull/15620
 	bool      m_has_div_quirk;
+	const bool m_v55_extensions;
+	uint16_t m_ds2;
+	uint16_t m_ds3;
+	u8 m_v55_rb;
+	bool m_iram_prefix;
+	std::array<u8, 0x200> m_iram;
 
 	uint32_t  m_prefix_base;    /* base address of the latest prefix segment */
 	uint8_t   m_seg_prefix;     /* prefix segment indicator */
@@ -391,6 +427,7 @@ private:
 	void i_outdxal();
 	void i_outdxax();
 	void i_lock();
+	void i_v55_iram();
 	void i_repne();
 	void i_repe();
 	void i_hlt();
@@ -697,7 +734,7 @@ public:
 class v33_base_device : public nec_common_device
 {
 protected:
-	v33_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_port_map);
+	v33_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_port_map, bool v55_extensions = false);
 
 	// device_memory_interface overrides
 	virtual bool memory_translate(int spacenum, int intention, offs_t &address, address_space *&target_space) override;

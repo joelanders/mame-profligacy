@@ -42,30 +42,48 @@ def expand_mv(v):
 
 
 EXPAND_C = ["get_cmem(i->param)", "get_cmem(ca)"]
-EXPAND_WC = ["cmem[i->param] =", "cmem[ca] ="]
+EXPAND_WC = ["write_cmem_from_dsp(i->param,", "write_cmem_from_dsp(ca,"]
 
 
-ROUNDING = [ 0, 1 << (48-32-1), 1 << (48-24-1), 1 << (48-30-1),
+# RND control bit -> rounding mode: entry 3 = 20-bit (fork silicon fix; profligacy had 48-30 typo)
+ROUNDING = [ 0, 1 << (48-32-1), 1 << (48-24-1), 1 << (48-20-1),
              1 << (48-16-1)]
 
 A = (1 << 64) - 1
 RMASK= [A,
         A - (1 << (48-32)) + 1,
         A - (1 << (48-24)) + 1,
-        A - (1 << (48-30)) + 1,
+        A - (1 << (48-20)) + 1,
         A - (1 << (48-16)) + 1,
         ]
 
 def expand_mo(v):
     c = ["", "s"][v["movm"]]
+    if v["movm"]:
+        return "macc_to_output_%d%s(0x%016xULL, 0x%016xULL, %d)" % (
+            v["sfmo"], c, ROUNDING[v["rnd"]], RMASK[v["rnd"]], v["rnd"])
+    return "macc_to_output_%d%s(0x%016xULL, 0x%016xULL)" % (
+        v["sfmo"], c, ROUNDING[v["rnd"]], RMASK[v["rnd"]])
+
+def expand_mn(v):
+    c = ["", "n"][v["movm"]]
     return "macc_to_output_%d%s(0x%016xULL, 0x%016xULL)" % (
         v["sfmo"], c, ROUNDING[v["rnd"]], RMASK[v["rnd"]])
 
 
 def expand_wd1(v):
     index = ["(i->param + ", "(id + "][v["dmode"]]
-    mask =  ["ba0) & 0xff] =", "ba1) & 0x1f] ="][v["dbp"]]
-    return "dmem%d[" % v["dbp"] + index + mask
+    mask =  ["ba0) & 0xff", "ba1) & 0x1f"][v["dbp"]]
+    bank = "true" if v["dbp"] else "false"
+    return "write_dmem(%s, " % bank + index + mask + ","
+
+def expand_wda(v):
+    index = ["(i->param + ", "(id + "][v["dmode"]]
+    mask =  ["ba0) & 0xff", "ba1) & 0x1f"][v["dbp"]]
+    return index + mask
+
+def expand_wdb(v):
+    return "true" if v["dbp"] else "false"
 
 WA2 = (
 "  if(r < -2147483648 || r > 2147483647) {\n"
@@ -83,11 +101,14 @@ PDESC_EXPAND = {
 
     "ml":    lambda v: EXPAND_ML[v["sfma"]],
     "mo":    expand_mo,
+    "mn":    expand_mn,
     "mv":    expand_mv,
     "wa1":   lambda v: "r =",
     "wa2":   lambda v: WA2,
     "wc1":   lambda v: EXPAND_WC[v["cmode"]],
     "wd1":   expand_wd1,
+    "wda":   expand_wda,
+    "wdb":   expand_wdb,
     "b1":    lambda v: "pc = ",
     "b2":    lambda v: "  sti |= S_BRANCH;",
     "sfai1": lambda v: ["",  "((int32_t)("][v["sfai"]],
@@ -102,10 +123,13 @@ PDESC = {
     "i":    (0, []),
     "ml":   (0, ["sfma"]),
     "mo":   (0, ["sfmo", "rnd", "movm"]),
+    "mn":   (0, ["sfmo", "rnd", "movm"]),
     "mv":   (0, ["sfmo", "movm"]),
     "wa":   (1, []),
     "wc":   (1, ["cmode"]),
     "wd":   (1, ["dmode", "dbp"]),
+    "wda":  (0, ["dmode", "dbp"]),
+    "wdb":  (0, ["dbp"]),
     "b":    (1, []),
     "sfai": (2, ["sfai"]),
 }
@@ -242,11 +266,11 @@ class Instruction:
                 out.append("%wa2")
             elif "%wd(" in r:
                 assert r.endswith(");")
-                r = r[0:-2].replace("%wd(", "%wd1 ") + ";"
+                r = r[0:-2].replace("%wd(", "%wd1 ") + ", \"WD\", pc);"
                 out.append(r)
             elif "%wc(" in r:
                 assert r.endswith(");")
-                r = r[0:-2].replace("%wc(", "%wc1 ") + ";"
+                r = r[0:-2].replace("%wc(", "%wc1 ") + ");"
                 out.append(r)
             elif "%b(" in r:
                 assert r.endswith(");")
@@ -298,6 +322,31 @@ class Instruction:
         flags = [fn for fn in VARIANT_CANONICAL_ORDER
                  if fn in self._flags]
         return self.EmitCintrpRecurse(f, prefix, no, {}, flags)
+
+
+    # Collect, per generated op-id, the resolved variant-bit assignment — the SAME numbering
+    # and the SAME enumeration order as EmitCintrp/EmitCintrpRecurse (so op-id N carries exactly
+    # the flag values ex_N was generated with). Feeds the asmjit op-emitter's descriptor table
+    # (CINTRPDESC): the emitter needs the decomposed bits (cmode/dmode/sfmo/...) that the runtime
+    # jit_op_variant() index does not expose. Appends (no, name, cat, id, type, flags_fixed) to out.
+    def CollectOpDesc(self, no, out):
+        if not self._run:
+            return no
+        flags = [fn for fn in VARIANT_CANONICAL_ORDER
+                 if fn in self._flags]
+        return self._CollectOpDescRecurse(no, out, {}, flags)
+
+    def _CollectOpDescRecurse(self, no, out, flags_fixed, flags_unfixed):
+        if not flags_unfixed:
+            out.append((no, self._name, self._cat, self._id, self._type, dict(flags_fixed)))
+            return no + 1
+        x = flags_unfixed.pop(-1)   # pop LAST — identical to EmitCintrpRecurse
+        n = VARIANTS[x][0]
+        for i in range(n):
+            flags_fixed[x] = i
+            no = self._CollectOpDescRecurse(no, out, flags_fixed, flags_unfixed)
+        flags_unfixed.append(x)
+        return no
 
 
     def Finalize(self):
@@ -425,6 +474,68 @@ def EmitCintrpSwitch(f, ins_list, no):
         print("case %d: ex_%d(i); break;" % (i, i), file=f)
     print("#endif", file=f)
 
+# Map every generated op index back to its instruction mnemonic, using the same
+# numbering as EmitCintrp (sort by (cat,id), start at 4, each run-form spans
+# _variants indices). Lets a coverage tool collapse the ~1861 generated cases back to
+# the ~129 instruction forms actually used by a program. Ops 0..3 are the chain/inc
+# handlers and map to "".
+def EmitOpNames(f, ins_list, no):
+    ins_list.sort(key=lambda x : (x._cat, x._id))
+    names = ["" for _ in range(no)]
+    idx = 4
+    for i in ins_list:
+        if not i._run:
+            continue
+        for k in range(i._variants):
+            if idx + k < no:
+                names[idx + k] = i._name
+        idx += i._variants
+    print("#ifdef CINTRPNAME", file=f)
+    print("static const char *const tms57002_op_name[%d] = {" % no, file=f)
+    for nm in names:
+        print('\t"%s",' % nm, file=f)
+    print("};", file=f)
+    print("#endif", file=f)
+
+
+# Emit the descriptor table consumed by the asmjit op-emitter (jit/tms57002_ops.cpp). One entry per
+# generated op-id, in the SAME numbering as EmitCintrp/EmitOpNames, carrying the decomposed variant
+# bits + a one-char type code (' '=arith, 'b'=uncond branch, 'c'=cond branch, 'i'=idle, 'f'=flag).
+# Ops 0..3 (chain/inc handlers) and any gaps get an empty {"",...} entry. The emitter maps op-id ->
+# (mnemonic, these bits) and dispatches to a hand-written, gated per-mnemonic lowering.
+def EmitOpDesc(f, ins_list, no):
+    ins_list.sort(key=lambda x : (x._cat, x._id))
+    out = []
+    n = 4
+    for i in ins_list:
+        n = i.CollectOpDesc(n, out)
+    table = [None] * no
+    for (idx, name, cat, iid, typ, fx) in out:
+        if idx < no:
+            table[idx] = (name, cat, iid, typ, fx)
+    fields = ["cmode", "dmode", "sfai", "dbp", "sfao", "sfmo", "rnd", "movm", "sfma"]
+    type_code = {"": " ", "d": " ", "b": "b", "cb": "c", "i": "i", "f": "f"}
+    cat_code = {"1": 1, "2a": 2, "2b": 3, "3": 4}
+    print("#ifdef CINTRPDESC", file=f)
+    print("struct tms57002_opdesc_t {", file=f)
+    print("\tconst char *mn;", file=f)
+    print("\tunsigned char cat;   // 1, 2a->2, 2b->3, 3->4", file=f)
+    print("\tunsigned char id;    // .lst opcode byte — distinguishes forms within a mnemonic", file=f)
+    print("\tunsigned char cmode, dmode, sfai, dbp, sfao, sfmo, rnd, movm, sfma;", file=f)
+    print("\tchar type;", file=f)
+    print("};", file=f)
+    print("static const tms57002_opdesc_t tms57002_op_desc[%d] = {" % no, file=f)
+    for e in table:
+        if e is None:
+            print('\t{ "", 0, 0, 0,0,0,0,0,0,0,0,0, \' \' },', file=f)
+        else:
+            name, cat, iid, typ, fx = e
+            vals = ", ".join(str(fx.get(k, 0)) for k in fields)
+            print('\t{ "%s", %d, 0x%02x, %s, \'%s\' },' % (name, cat_code[cat], iid, vals, type_code[typ]), file=f)
+    print("};", file=f)
+    print("#endif", file=f)
+    print("", file=f)
+
 
 def CheckSelfAssign(line):
     ls = line.split('=')
@@ -450,3 +561,5 @@ else:
     no = EmitCintrp(f, ins_list)
     EmitCintrpDecl(f, ins_list, no)
     EmitCintrpSwitch(f, ins_list, no)
+    EmitOpNames(f, ins_list, no)
+    EmitOpDesc(f, ins_list, no)

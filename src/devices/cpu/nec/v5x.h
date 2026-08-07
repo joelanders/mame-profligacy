@@ -272,7 +272,7 @@ public:
 	}
 
 protected:
-	v53_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
+	v53_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, bool v55_extensions = false);
 
 	// device-specific overrides
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
@@ -314,9 +314,214 @@ public:
 	v53a_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 };
 
+class v55_device : public v53_device
+{
+public:
+	enum serial_irq_source : u8
+	{
+		SERIAL_IRQ_INTSER0 = 0,
+		SERIAL_IRQ_INTSER1,
+		SERIAL_IRQ_INTSR0,
+		SERIAL_IRQ_INTSR1,
+		SERIAL_IRQ_INTST0,
+		SERIAL_IRQ_INTST1,
+		SERIAL_IRQ_COUNT
+	};
+
+	enum timer_irq_source : u8
+	{
+		TIMER_IRQ_INTCM21 = 0,
+		TIMER_IRQ_INTCM31,
+		TIMER_IRQ_COUNT
+	};
+
+	v55_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+	template <unsigned Port> auto in_p_cb()
+	{
+		static_assert(Port < 9);
+		return m_port_in_cb[Port].bind();
+	}
+
+	template <unsigned Port> auto out_p_cb()
+	{
+		static_assert(Port < 9);
+		return m_port_out_cb[Port].bind();
+	}
+
+	template <unsigned Channel> auto read_adc()
+	{
+		static_assert(Channel < 4);
+		return m_adc_in_cb[Channel].bind();
+	}
+
+	auto txd_handler_cb() { return m_txd0_handler.bind(); }
+	auto txd1_handler_cb() { return m_txd1_handler.bind(); }
+	auto adc_fint_cb() { return m_adc_fint_cb.bind(); }
+	void rxd_w(int state);
+	void inject_uart0_rx_byte(u8 data);
+	void cts_w(int state);
+	void rxd1_w(int state);
+	void cts1_w(int state);
+	void set_timer_irq_bank(timer_irq_source source, u8 bank) { m_timer_irq_bank[unsigned(source)] = bank & 0x0f; }
+	enum class serial_irq_mode : u8
+	{
+		off = 0,
+		tx0_only,
+		rx0_tx0,
+		broad,
+		rx0_only,
+		rx0_late_tx0,
+		rx0_rx1
+	};
+	void set_serial_irq_mode(serial_irq_mode mode) { m_default_serial_irq_mode = mode; }
+	// Board-link bit rate until the TXBRG/RXBRG/PRS decode is modeled. Must
+	// match the H8 SCI0 rate (h8_clock / 384 for Prophecy's boot SMR/BRR).
+	void set_uart0_bit_rate(u32 hz) { m_uart0_bit_rate = hz ? hz : 41'667; }
+	u8 debug_logical_read_byte(offs_t address) { return mem_read_byte(address); }
+	u16 debug_logical_read_word(offs_t address) { return mem_read_word(address); }
+	void debug_logical_write_byte(offs_t address, u8 data) { mem_write_byte(address, data); }
+	void debug_logical_write_word(offs_t address, u16 data) { mem_write_word(address, data); }
+
+protected:
+	virtual void device_start() override ATTR_COLD;
+	virtual void device_reset() override ATTR_COLD;
+
+	virtual space_config_vector memory_space_config() const override;
+	virtual bool memory_translate(int spacenum, int intention, offs_t &address, address_space *&target_space) override;
+	virtual u8 mem_read_byte(offs_t a) override;
+	virtual u16 mem_read_word(offs_t a) override;
+	virtual void mem_write_byte(offs_t a, u8 v) override;
+	virtual void mem_write_word(offs_t a, u16 v) override;
+	virtual bool handle_special_int_ack() override;
+	virtual void v55_fint() override;
+
+private:
+	void sfr_map(address_map &map) ATTR_COLD;
+	u8 sfr_r(offs_t offset);
+	void sfr_w(offs_t offset, u8 data);
+	u8 port_r(unsigned port);
+	void port_w(unsigned port, u8 data);
+	bool port2_output_enabled() const;
+	void update_port2_output();
+	void update_timer(timer_irq_source source);
+	attotime timer_tick_period(timer_irq_source source) const;
+	TIMER_CALLBACK_MEMBER(timer_tick);
+	void request_timer_irq(timer_irq_source source);
+	bool timer_irq_experiment_enabled() const;
+	bool timer_irq_enabled(timer_irq_source source) const;
+	bool timer_irq_bankswitch(timer_irq_source source) const;
+	u8 timer_irq_priority(timer_irq_source source) const;
+	u8 timer_irq_ic(timer_irq_source source) const;
+	u8 timer_irq_vector(timer_irq_source source) const;
+	u16 timer_compare(timer_irq_source source) const;
+	u8 timer_control_enable_bit(timer_irq_source source) const;
+	u8 timer_control_prescale_bit(timer_irq_source source) const;
+	int timer_irq_index_from_source(int source) const;
+	bool adc_irq_experiment_enabled() const;
+	bool adc_irq_enabled() const;
+	bool adc_irq_bankswitch() const;
+	u8 adc_irq_priority() const;
+	u8 adc_irq_bank();
+	void update_adc_timer();
+	attotime adc_tick_period() const;
+	void update_adc_results();
+	void request_adc_irq();
+	TIMER_CALLBACK_MEMBER(adc_tick);
+	void update_uart0_status();
+	bool uart0_tx_enabled() const;
+	void start_uart0_tx();
+	attotime uart0_bit_period() const;
+	TIMER_CALLBACK_MEMBER(uart0_tx_tick);
+	TIMER_CALLBACK_MEMBER(uart0_rx_tick);
+	void update_uart1_status();
+	void start_uart1_tx();
+	attotime uart1_bit_period() const;
+	TIMER_CALLBACK_MEMBER(uart1_tx_tick);
+	TIMER_CALLBACK_MEMBER(uart1_rx_tick);
+	int select_internal_special_irq() const;
+	int current_internal_special_irq_source() const;
+	void update_internal_serial_irq_line();
+	void request_internal_serial_irq(serial_irq_source source);
+	bool tx0_late_irq_window() const;
+	bool internal_serial_irq_enabled(serial_irq_source source) const;
+	bool internal_serial_irq_bankswitch(serial_irq_source source) const;
+	u8 internal_serial_irq_bank(serial_irq_source source);
+	int select_internal_serial_irq() const;
+	int current_internal_serial_irq_source() const;
+	u8 internal_serial_irq_ic(serial_irq_source source) const;
+	serial_irq_mode current_serial_irq_mode() const;
+	u8 interrupt_vector_bank(u8 vector);
+	u16 interrupt_vector_address(u8 vector) const;
+	u8 special_irq_vector(int source) const;
+	u8 special_irq_priority(int source) const;
+	bool priority_is_tracked(u8 priority) const;
+	bool can_accept_priority(u8 priority) const;
+	void mark_special_irq_in_service(int source);
+	int current_special_irq_stack_source() const;
+	int pop_special_irq_stack_source();
+	void clear_special_irq_source(int source);
+
+	address_space_config m_sfr_config;
+	std::array<u8, 0x200> m_sfr;
+	devcb_read8::array<4> m_adc_in_cb;
+	devcb_read8::array<9> m_port_in_cb;
+	devcb_write8::array<9> m_port_out_cb;
+	devcb_write_line m_txd0_handler;
+	devcb_write_line m_txd1_handler;
+	devcb_write_line m_adc_fint_cb;
+	std::array<emu_timer *, TIMER_IRQ_COUNT> m_timer;
+	emu_timer *m_adc_timer;
+	emu_timer *m_uart0_tx_timer;
+	emu_timer *m_uart0_rx_timer;
+	emu_timer *m_uart1_tx_timer;
+	emu_timer *m_uart1_rx_timer;
+	bool m_adc_running;
+	u8 m_rxd0;
+	u8 m_cts0;
+	u8 m_uart0_txd_state;
+	u8 m_uart0_tx_byte;
+	u8 m_uart0_tx_bit;
+	u8 m_uart0_rx_byte;
+	u8 m_uart0_rx_bit;
+	u8 m_uart0_rx_prev;
+	bool m_uart0_tx_active;
+	bool m_uart0_tx_loaded;
+	bool m_uart0_rx_active;
+	bool m_uart0_rx_full;
+	u8 m_rxd1;
+	u8 m_cts1;
+	u8 m_uart1_txd_state;
+	u8 m_uart1_tx_byte;
+	u8 m_uart1_tx_bit;
+	u8 m_uart1_rx_byte;
+	u8 m_uart1_rx_bit;
+	u8 m_uart1_rx_prev;
+	bool m_uart1_tx_active;
+	bool m_uart1_tx_loaded;
+	bool m_uart1_rx_active;
+	bool m_uart1_rx_full;
+	serial_irq_mode m_default_serial_irq_mode = serial_irq_mode::off;
+	u32 m_uart0_bit_rate = 41'667;
+	std::array<u8, TIMER_IRQ_COUNT> m_timer_irq_bank;
+	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_pending;
+	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_in_service;
+	bool m_adc_irq_pending;
+	bool m_adc_irq_in_service;
+	u8 m_internal_serial_irq_pending;
+	u8 m_internal_serial_irq_in_service;
+	std::array<u8, SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT + 1> m_special_irq_stack;
+	u8 m_special_irq_stack_depth;
+	serial_irq_mode m_serial_irq_mode;
+	bool m_timer_irq_experiment;
+	bool m_adc_irq_experiment;
+	u8 m_adc_irq_bank;
+};
+
 DECLARE_DEVICE_TYPE(V40,  v40_device)
 DECLARE_DEVICE_TYPE(V50,  v50_device)
 DECLARE_DEVICE_TYPE(V53,  v53_device)
 DECLARE_DEVICE_TYPE(V53A, v53a_device)
+DECLARE_DEVICE_TYPE(V55,  v55_device)
 
 #endif // MAME_CPU_NEC_V5X_H
