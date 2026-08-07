@@ -1,0 +1,24 @@
+name: Korg Prophecy no-ROM gates
+
+on:
+  push:
+    branches: [profligacy-public-v1]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  no-rom-macos:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install SDL build dependency
+        run: brew install sdl2
+      - name: Build and run public gates
+        env:
+          JOBS: 4
+        run: python3 scripts/korgprophecy_no_rom_gate.py --content-only
