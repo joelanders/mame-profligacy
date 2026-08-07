@@ -26660,6 +26660,11 @@ korgm1p1
 korgm1r
 korgm1rex
 
+@source:korg/korgprophecy.cpp
+korgprop
+korgpro101
+korgpro20
+
 @source:korg/korgtriton.cpp
 korgtriton
 korgtritona
@@ -44306,6 +44311,9 @@ testlove
 @source:skeleton/testpat.cpp
 tp1983
 tp1985
+
+@source:skeleton/tms57002test.cpp
+tms57002test
 
 @source:skeleton/textelcomp.cpp
 a1010
