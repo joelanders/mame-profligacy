@@ -1,0 +1,369 @@
+{
+  "schema": "tms57002-legacy-asset-manifest-v1",
+  "bundle_env": "TMS57TEST_LEGACY_ASSET_ROOT",
+  "contract": "Set bundle_env to an external directory mirroring the bundle_path entries. ROM-derived/capture assets are intentionally not vendored.",
+  "recovery": {
+    "status": "exact_assets_not_found",
+    "checked_at": "2026-08-03",
+    "note": "The exact historical bundle is unavailable. Do not substitute similarly named captures."
+  },
+  "summary": {
+    "hardcoded_dependencies": 50,
+    "files": 47,
+    "directories": 3,
+    "legacy_research_tests": 11,
+    "public_release_denominator": 0
+  },
+  "assets": [
+    {
+      "asset_path": "00-extracted/korgprop_dsp_offline_extract/dsp3_init.bin",
+      "bundle_path": "00-extracted/korgprop_dsp_offline_extract/dsp3_init.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_firstbad_seed/execpost_only_su480005_sine.log",
+      "bundle_path": "00-extracted/kprop_a02_firstbad_seed/execpost_only_su480005_sine.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_firstbad_seed/execpost_su480006_full_sine.log",
+      "bundle_path": "00-extracted/kprop_a02_firstbad_seed/execpost_su480006_full_sine.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_firstbad_seed/snapshot_su480005_pc00_pre_sine.log",
+      "bundle_path": "00-extracted/kprop_a02_firstbad_seed/snapshot_su480005_pc00_pre_sine.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_firstbad_seed/snapshot_su480006_pc00_pre_sine.log",
+      "bundle_path": "00-extracted/kprop_a02_firstbad_seed/snapshot_su480006_pc00_pre_sine.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_firstbad_seed/xmem_su480005_pc00_pre_sine.bin",
+      "bundle_path": "00-extracted/kprop_a02_firstbad_seed/xmem_su480005_pc00_pre_sine.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_firstbad_seed/xmem_su480006_pc00_pre_sine.bin",
+      "bundle_path": "00-extracted/kprop_a02_firstbad_seed/xmem_su480006_pc00_pre_sine.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_impulse_sample_tape_long_20260408/extracted/snapshot_su480002_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_impulse_sample_tape_long_20260408/extracted/snapshot_su480002_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_impulse_sample_tape_long_20260408/extracted/snapshot_su480003_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_impulse_sample_tape_long_20260408/extracted/snapshot_su480003_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_impulse_sample_tape_long_20260408/ram/su480002_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_impulse_sample_tape_long_20260408/ram/su480002_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_replay_seed/execpost_su480082_pc00_10_sine.log",
+      "bundle_path": "00-extracted/kprop_a02_replay_seed/execpost_su480082_pc00_10_sine.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_replay_seed/snapshot_su480082_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_replay_seed/snapshot_su480082_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sample_tape_20260408/error.log",
+      "bundle_path": "00-extracted/kprop_a02_sample_tape_20260408/error.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sample_tape_20260408/ram",
+      "bundle_path": "00-extracted/kprop_a02_sample_tape_20260408/ram",
+      "kind": "directory",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_live_dump/dump_dsp3.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_live_dump/dump_dsp3.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/execpost_su480002_full.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/execpost_su480002_full.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/execpost_su480003_full.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/execpost_su480003_full.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/snapshot_su480002_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/snapshot_su480002_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/snapshot_su480003_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/extracted/snapshot_su480003_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/ram/su480002_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/ram/su480002_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/ram/su480003_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_480001_480006_20260408/ram/su480003_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480003_full.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480003_full.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480004_full.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480004_full.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480005_full.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480005_full.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480006_full.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/execpost_su480006_full.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480003_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480003_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480004_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480004_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480005_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480005_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480006_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/ram/su480006_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480003_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480003_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480004_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480004_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480005_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480005_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480006_pc00_pre.log",
+      "bundle_path": "00-extracted/kprop_a02_sine_sample_tape_long_20260408/snapshot_su480006_pc00_pre.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_serial_side_boundary_20260408/baseline/error.log",
+      "bundle_path": "00-extracted/kprop_serial_side_boundary_20260408/baseline/error.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_serial_side_boundary_20260408/baseline/ram/su480001_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_serial_side_boundary_20260408/baseline/ram/su480001_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_serial_side_boundary_20260408/flip_input/error.log",
+      "bundle_path": "00-extracted/kprop_serial_side_boundary_20260408/flip_input/error.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "00-extracted/kprop_serial_side_boundary_20260408/flip_input/ram/su480001_pc00_pre.bin",
+      "bundle_path": "00-extracted/kprop_serial_side_boundary_20260408/flip_input/ram/su480001_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_clip_tape_95296_v3/dspsnap.log",
+      "bundle_path": "tmp/kprop_a02_clip_tape_95296_v3/dspsnap.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_clip_tape_95296_v3/ram",
+      "bundle_path": "tmp/kprop_a02_clip_tape_95296_v3/ram",
+      "kind": "directory",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_fix_sample_tape_text95297/dspsnap.log",
+      "bundle_path": "tmp/kprop_a02_fix_sample_tape_text95297/dspsnap.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_fix_sample_tape_text95297/ram/su095298_pc00_pre.bin",
+      "bundle_path": "tmp/kprop_a02_fix_sample_tape_text95297/ram/su095298_pc00_pre.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_onset_92847_92853/dspsnap.log",
+      "bundle_path": "tmp/kprop_a02_onset_92847_92853/dspsnap.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_onset_92847_92853/ram",
+      "bundle_path": "tmp/kprop_a02_onset_92847_92853/ram",
+      "kind": "directory",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_su480001_start_impulse/error.log",
+      "bundle_path": "tmp/kprop_a02_su480001_start_impulse/error.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_su480001_start_sine/error.log",
+      "bundle_path": "tmp/kprop_a02_su480001_start_sine/error.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_su480001_start_sine/xmem.bin",
+      "bundle_path": "tmp/kprop_a02_su480001_start_sine/xmem.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_su480004_seed/error.log",
+      "bundle_path": "tmp/kprop_a02_su480004_seed/error.log",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_a02_su480004_seed/xmem_su480004_pc00_pre_sine.bin",
+      "bundle_path": "tmp/kprop_a02_su480004_seed/xmem_su480004_pc00_pre_sine.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_current_dump_2s/cur_dsp3.bin",
+      "bundle_path": "tmp/kprop_current_dump_2s/cur_dsp3.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    },
+    {
+      "asset_path": "tmp/kprop_dsp3_dump.sTfkHh/dump_dsp3.bin",
+      "bundle_path": "tmp/kprop_dsp3_dump.sTfkHh/dump_dsp3.bin",
+      "kind": "file",
+      "sha256": null,
+      "recovery_status": "missing_exact_asset_do_not_substitute"
+    }
+  ]
+}
