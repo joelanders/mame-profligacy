@@ -13,10 +13,13 @@
 #include <asmjit/x86.h>    // x86-64 Compiler + emitter
 #define KPROP_JIT_X64 1
 #endif
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace tms57002 {
 
@@ -1527,6 +1530,14 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 	const u32 idle_mask = tms57002_device::jit_s_idle_mask();
 	const u32 rw_mask = tms57002_device::jit_s_read_mask() | tms57002_device::jit_s_write_mask();
 	const x86::Gp DEV = x86::rbx, MACC = x86::r12, MACR = x86::r13, MACW = x86::r14, AACC = x86::r15, PARAM = x86::r11;
+	// Keep the handwritten assembler's C++ calls ABI-correct on both x64 ABIs.
+	// Windows uses RCX/RDX/R8 and requires 32 bytes of caller-provided shadow
+	// space; System V uses RDI/RSI/RDX and has no shadow-space requirement.
+#if defined(_WIN32)
+	const x86::Gp ARG0 = x86::rcx, ARG1 = x86::rdx, ARG2 = x86::r8;
+#else
+	const x86::Gp ARG0 = x86::rdi, ARG1 = x86::rsi, ARG2 = x86::rdx;
+#endif
 
 	const int nsteps = int(order.size());
 	if (nsteps == 0)
@@ -1559,6 +1570,7 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 	// entry (armed there = a previous program's transaction still in flight across a PLOAD -> let the
 	// interpreter run this frame; it xm_steps per instruction until the transaction drains).
 	bool program_has_xm = false;
+	bool program_reads_cmem = false;
 	for (const auto &e : order)
 	{
 		int cur = e.second;
@@ -1566,6 +1578,7 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 		{
 			const unsigned op = dsp.jit_inst_op(cur);
 			if (op < 4) break;
+			program_reads_cmem |= tms57002::op_reads_cmem(dsp, op);
 			const char *mn = dsp.jit_op_mnemonic(op);
 			if (mn && (__builtin_strcmp(mn, "rde") == 0 || __builtin_strcmp(mn, "wre") == 0))
 			{
@@ -1574,8 +1587,8 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 			}
 			cur = dsp.jit_inst_next(cur);
 		}
-		if (program_has_xm) break;
 	}
+	const bool hoist_cmem_guard = dsp.jit_pf4_cmem_deopt() && program_reads_cmem;
 
 	// A label per emitted PC (branch targets reference these). Per-driver (not shared).
 	std::map<int, Label> pc_label;
@@ -1596,10 +1609,32 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 		a.mov(MACW, x86::qword_ptr(DEV, off_macc_w));
 		a.mov(AACC.r32(), x86::dword_ptr(DEV, off_aacc));
 	};
-	// prologue: preserve the pinned callee-saved regs (5 pushes -> rsp 16-aligned for calls), load state.
+	// Prologue: preserve the pinned callee-saved regs (five pushes leave RSP
+	// 16-byte aligned at call sites), reserve Windows shadow space, and load state.
 	a.push(x86::rbx); a.push(x86::r12); a.push(x86::r13); a.push(x86::r14); a.push(x86::r15);
-	a.mov(DEV, x86::rdi);
+#if defined(_WIN32)
+	a.sub(x86::rsp, Imm(32));
+#endif
+	a.mov(DEV, ARG0);
 	reload();
+
+	if (hoist_cmem_guard)
+	{
+		// MAME runs devices serially, so the V55 cannot enqueue a coefficient update while this
+		// DSP frame is executing. If the queue is clear here, direct CMEM bodies remain safe for
+		// the whole frame; otherwise let the interpreter drain it with exact per-read timing.
+		Label safe = a.new_label();
+		a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_head())));
+		a.movzx(x86::ecx, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_tail())));
+		a.cmp(x86::eax, x86::ecx);
+		a.je(safe);
+		a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_pf4_force())));
+		a.test(x86::eax, x86::eax);
+		a.jnz(safe);
+		a.mov(x86::eax, Imm(-1));
+		a.jmp(fallback);
+		a.bind(safe);
+	}
 
 	if (!program_has_xm)
 	{
@@ -1645,7 +1680,7 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 			a.mov(x86::ecx, x86::dword_ptr(DEV, off_sti));
 			a.test(x86::ecx, Imm(rw_mask));
 			a.jz(skip);
-			a.mov(x86::rdi, DEV);
+			a.mov(ARG0, DEV);
 			a.call(thunks.xm);
 			a.bind(skip);
 		}
@@ -1676,7 +1711,8 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 			if (pit != pool.end())
 			{
 				// POOL: operand in r11 (=PARAM), then call the shared body under the private convention.
-				if (dsp.jit_pf4_cmem_deopt() && tms57002::op_reads_cmem(dsp, op))
+				if (!hoist_cmem_guard && dsp.jit_pf4_cmem_deopt()
+					&& tms57002::op_reads_cmem(dsp, op))
 				{
 					// CMEM-read op under KPROP_PF4_CMEM_DEOPT: deopt to the interpreter when an
 					// update is pending (head != tail) and not force-unsafe; else fast body.
@@ -1690,9 +1726,9 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 					a.test(x86::eax, x86::eax);
 					a.jnz(do_fast);                                  // force-unsafe baseline -> fast
 					spill();
-					a.mov(x86::rdi, DEV);
-					a.mov(x86::esi, Imm(op));
-					a.mov(x86::rdx, Imm(icd));
+					a.mov(ARG0, DEV);
+					a.mov(ARG1.r32(), Imm(op));
+					a.mov(ARG2, Imm(icd));
 					a.call(thunks.op);
 					reload();
 					a.mov(x86::ecx, x86::dword_ptr(DEV, off_sti));
@@ -1704,11 +1740,11 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 					a.call(pit->second.label);
 					a.bind(guard_done);
 				}
-				else
-				{
-					a.mov(PARAM.r32(), Imm(u32(u8(dsp.jit_inst_param(cur)))));
-					a.call(pit->second.label);
-				}
+			else
+			{
+				a.mov(PARAM.r32(), Imm(u32(u8(dsp.jit_inst_param(cur)))));
+				a.call(pit->second.label);
+			}
 			}
 			else
 			{
@@ -1717,9 +1753,9 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 				chain_had_deopt = true;
 				const uint64_t icd = dsp.jit_inst_addr(cur);
 				spill();
-				a.mov(x86::rdi, DEV);
-				a.mov(x86::esi, Imm(op));
-				a.mov(x86::rdx, Imm(icd));
+				a.mov(ARG0, DEV);
+				a.mov(ARG1.r32(), Imm(op));
+				a.mov(ARG2, Imm(icd));
 				a.call(thunks.op);
 				reload();
 				a.mov(x86::ecx, x86::dword_ptr(DEV, off_sti));   // op set S_IDLE -> end chain
@@ -1748,9 +1784,9 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 		//    poolable, and jit_pc_post cannot set S_IDLE either (apply_pending_pre_transfer only writes
 		//    dmem; the serial-phase arm is excluded frame-level by !serial_cycle_model).
 		auto post_slow = [&]() {
-			a.mov(x86::rdi, DEV);
-			a.mov(x86::esi, Imm(ipc_k));
-			a.mov(x86::edx, Imm(chain_ipc));
+			a.mov(ARG0, DEV);
+			a.mov(ARG1.r32(), Imm(ipc_k));
+			a.mov(ARG2.r32(), Imm(chain_ipc));
 			a.call(thunks.post);
 		};
 		// eax = -1 is the "re-decode at the device pc" resume sentinel (same as a branch post's return).
@@ -1879,14 +1915,17 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 	a.bind(fallback);
 	a.mov(x86::r10d, x86::eax);   // stash resume ipc (r10 survives spill; spill uses only DEV + pinned)
 	spill();
-	a.mov(x86::rdi, DEV);
-	a.mov(x86::esi, x86::r10d);
+	a.mov(ARG0, DEV);
+	a.mov(ARG1.r32(), x86::r10d);
 	a.call(thunks.rest);
 	reload();
 	// fall through to done
 
 	a.bind(done);
 	spill();
+#if defined(_WIN32)
+	a.add(x86::rsp, Imm(32));
+#endif
 	a.pop(x86::r15); a.pop(x86::r14); a.pop(x86::r13); a.pop(x86::r12); a.pop(x86::rbx);
 	a.ret();
 
@@ -1953,14 +1992,27 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 	const u32 rw_mask = tms57002_device::jit_s_read_mask() | tms57002_device::jit_s_write_mask();
 	const a64::Gp DEV = a64::x19, MACC = a64::x20, MACR = a64::x21, MACW = a64::x22, AACC = a64::x23, PARAM = a64::x15;
 	const a64::Gp S0 = a64::x9, S1 = a64::x10, S2 = a64::x11;   // driver scratch (caller-saved)
-		const int off_uc_head = int(tms57002_device::jit_off_uc_head());     // CMEM-deopt guard (KPROP_PF4_CMEM_DEOPT)
-		const int off_uc_tail = int(tms57002_device::jit_off_uc_tail());
-		const int off_pf4_force = int(tms57002_device::jit_off_pf4_force());
-		const bool cmem_deopt = dsp.jit_pf4_cmem_deopt();
+	const int off_uc_head = int(tms57002_device::jit_off_uc_head());     // CMEM-deopt guard (KPROP_PF4_CMEM_DEOPT)
+	const int off_uc_tail = int(tms57002_device::jit_off_uc_tail());
+	const int off_pf4_force = int(tms57002_device::jit_off_pf4_force());
+	const bool cmem_deopt = dsp.jit_pf4_cmem_deopt();
 
 	const int nsteps = int(order.size());
 	if (nsteps == 0)
 		return false;
+	bool program_reads_cmem = false;
+	for (const auto &entry : order)
+	{
+		int cur = entry.second;
+		for (int steps = 0; steps <= 64; ++steps)
+		{
+			const unsigned op = dsp.jit_inst_op(cur);
+			if (op < 4) break;
+			program_reads_cmem |= tms57002::op_reads_cmem(dsp, op);
+			cur = dsp.jit_inst_next(cur);
+		}
+	}
+	const bool hoist_cmem_guard = cmem_deopt && program_reads_cmem;
 
 	std::map<int, Label> pc_label;
 	for (int k = 0; k < nsteps; k++)
@@ -2021,6 +2073,19 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 	a.str(a64::x23, a64::ptr(a64::sp, 48));
 	a.mov(DEV, a64::x0);
 	reload();
+
+	if (hoist_cmem_guard)
+	{
+		Label safe = a.new_label();
+		ldb(S0, off_uc_head); ldb(S1, off_uc_tail);
+		a.cmp(S0.w(), S1.w());
+		a.b_eq(safe);
+		ldb(S0, off_pf4_force);
+		a.cbnz(S0.w(), safe);
+		a.mov(a64::w0, Imm(-1));
+		a.b(fallback);
+		a.bind(safe);
+	}
 
 	// [continuation] mid-PC entry: dispatch on the CURRENT device pc via the embedded delta table
 	// (adr = pc-relative, relocation-free; the pooled region is far below adr's ±1MB range).
@@ -2089,7 +2154,7 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 			{
 				// POOL: operand in w15 (=PARAM; write the W form so x15's upper bits stay zero),
 				// then call the shared body under the private convention.
-				if (cmem_deopt && tms57002::op_reads_cmem(dsp, op))
+				if (!hoist_cmem_guard && cmem_deopt && tms57002::op_reads_cmem(dsp, op))
 				{
 					// CMEM-read op under KPROP_PF4_CMEM_DEOPT: if an update is pending
 					// (head != tail) and not force-unsafe, DEOPT to the interpreter (get_cmem
@@ -2117,11 +2182,11 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 					a.bl(pit->second.label);
 					a.bind(guard_done);
 				}
-				else
-				{
-					a.mov(PARAM.w(), Imm(u32(u8(dsp.jit_inst_param(cur)))));
-					a.bl(pit->second.label);
-				}
+			else
+			{
+				a.mov(PARAM.w(), Imm(u32(u8(dsp.jit_inst_param(cur)))));
+				a.bl(pit->second.label);
+			}
 			}
 			else
 			{
@@ -2300,6 +2365,42 @@ Jit::FrameFn Jit::compile_frame_pooled(tms57002_device &dsp, int max_steps, int 
 	PooledErrorSink esink;
 	code.set_error_handler(&esink);
 	PooledAssembler a(&code);
+
+	// Compile-time diagnostic: rank the operations baked into each live DSP program. This is
+	// deliberately static rather than a counter in generated code, so enabling it cannot perturb
+	// the hot path. It gives selective-inlining experiments a workload-derived target list.
+	static const bool s_op_stats = [] {
+		const char *e = std::getenv("KPROP_PF4_OP_STATS");
+		return e && *e && *e != '0';
+	}();
+	if (s_op_stats)
+	{
+		std::map<std::string, int> counts;
+		int total = 0;
+		for (const auto &entry : m_pooled_order)
+		{
+			int cur = entry.second;
+			for (int steps = 0; steps <= 64; ++steps)
+			{
+				const unsigned op = dsp.jit_inst_op(cur);
+				if (op < 4)
+					break;
+				const char *mn = dsp.jit_op_mnemonic(op);
+				++counts[mn ? mn : "?"];
+				++total;
+				cur = dsp.jit_inst_next(cur);
+			}
+		}
+		std::vector<std::pair<std::string, int>> ranked(counts.begin(), counts.end());
+		std::sort(ranked.begin(), ranked.end(), [](const auto &lhs, const auto &rhs) {
+			return lhs.second != rhs.second ? lhs.second > rhs.second : lhs.first < rhs.first;
+		});
+		std::fprintf(stderr, "[pooled-ops] prog=%016llx pcs=%zu ops=%d",
+			(unsigned long long)m_cur_prog_hash, m_pooled_order.size(), total);
+		for (std::size_t i = 0; i < ranked.size() && i < 16; ++i)
+			std::fprintf(stderr, " %s=%d", ranked[i].first.c_str(), ranked[i].second);
+		std::fputc('\n', stderr);
+	}
 
 	// One driver + its own pool copy (per-program). scan_pool BEFORE the driver (labels referenced by it).
 	std::map<unsigned, PoolBody> pool;
