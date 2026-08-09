@@ -8,8 +8,8 @@
 // Phases: 0 = interpreter-seam harness (run_sample). Foundation = a real asmjit-
 // compiled frame runner that drives the program by CALLing the trampoline
 // (run_sample_compiled); those calls become native code per the 41-form coverage list.
-#ifndef TMS57002_JIT_H
-#define TMS57002_JIT_H
+#ifndef MAME_CPU_TMS57002_JIT_TMS57002_JIT_H
+#define MAME_CPU_TMS57002_JIT_TMS57002_JIT_H
 
 #include "emu.h"        // runtime/compat typedefs (u8, u32, ...) — tms57002.h needs them
 #include "tms57002.h"   // tms57002_device
@@ -178,4 +178,4 @@ private:
 
 }  // namespace tms57002
 
-#endif  // TMS57002_JIT_H
+#endif  // MAME_CPU_TMS57002_JIT_TMS57002_JIT_H

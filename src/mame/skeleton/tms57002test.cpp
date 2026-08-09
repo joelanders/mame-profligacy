@@ -40,7 +40,6 @@ protected:
 	virtual void machine_start() override ATTR_COLD;
 
 private:
-	TIMER_CALLBACK_MEMBER(run_tests);
 	void run_tests_now();
 	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
@@ -78,12 +77,12 @@ private:
 	void test_smld_raw_low_port();
 	void test_mac_a_d_and_smld_port_semantics();
 	void test_domh_sfmo2_trace_cases();
-	void test_dsp3_a02_f8_ff_tail_chain();
+	[[maybe_unused]] void test_dsp3_a02_f8_ff_tail_chain();
 	void test_instruction_level_serial_passthrough();
 	void test_example53_bank_switched_serial_access();
 	void test_example53_one_frame_output_latency();
 	void test_example53_dos_deadline();
-	void test_dsp3_mpy_dis_uses_prior_dmem();
+	[[maybe_unused]] void test_dsp3_mpy_dis_uses_prior_dmem();
 	void test_dsp3_mpy_dis_uses_incoming_dmem();
 	void test_dsp3_wre_smhd_orders_store_before_xwr();
 	void test_dsp3_rde_sacc_uses_store_updated_cmem_for_xoa();
@@ -7770,11 +7769,6 @@ void tms57002test_state::run_legacy_research_tests()
 			int(std::size(tests) + 1), passed, failed, errored, blocked, m_failures);
 }
 
-TIMER_CALLBACK_MEMBER(tms57002test_state::run_tests)
-{
-	run_tests_now();
-}
-
 void tms57002test_state::run_tests_now()
 {
 	if (const char *only = std::getenv("TMS57TEST_ONLY"))
@@ -7921,7 +7915,7 @@ void tms57002test_state::tms57002test(machine_config &config)
 	TMS57002(config, m_dsp, XTAL(24'576'000));
 	m_dsp->set_addrmap(AS_DATA, &tms57002test_state::dsp_ram_map);
 
-	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_raw(1'000'000, 80, 0, 64, 80, 0, 64);
 	screen.set_screen_update(FUNC(tms57002test_state::screen_update));
 }

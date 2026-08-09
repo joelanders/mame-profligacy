@@ -10,10 +10,13 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OFFICIAL_BASE = "678947615f6742c65223423123869f80d3c885b1"
+OFFICIAL_BASE = "a60f95ea04a4f9b4bd950c88068cce1dcdc04b6e"
 OFFICIAL_FETCH = "https://github.com/mamedev/mame.git"
 
 ALLOWED_EXACT = {
+    ".github/workflows/ci-linux.yml",
+    ".github/workflows/ci-macos.yml",
+    ".github/workflows/ci-windows.yml",
     ".github/workflows/korgprophecy-no-rom.yml",
     "PUBLIC_ACCEPTANCE.md",
     "PUBLIC_PROVENANCE.md",

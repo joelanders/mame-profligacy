@@ -23,8 +23,8 @@ namespace tms57002 {
 namespace {
 // C-callable wrappers so JIT-compiled code can call the device's per-op trampoline
 // and idle check (asmjit invokes these by absolute address).
-void jit_step(tms57002_device *d) { d->jit_step_one(); }                       // one program instruction
-unsigned jit_idle(tms57002_device *d) { return d->jit_is_idle() ? 1u : 0u; }   // program hit `idle`
+[[maybe_unused]] void jit_step(tms57002_device *d) { d->jit_step_one(); }                       // one program instruction (AArch64 trampoline)
+[[maybe_unused]] unsigned jit_idle(tms57002_device *d) { return d->jit_is_idle() ? 1u : 0u; }   // program hit `idle` (AArch64 trampoline)
 
 // Wrappers the native per-PC JIT calls (free functions -> the public seam methods).
 void jit_w_op(tms57002_device *d, unsigned op, const void *i) { d->jit_op_exec(op, i); }
@@ -1527,7 +1527,6 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 	const u32 idle_mask = tms57002_device::jit_s_idle_mask();
 	const u32 rw_mask = tms57002_device::jit_s_read_mask() | tms57002_device::jit_s_write_mask();
 	const x86::Gp DEV = x86::rbx, MACC = x86::r12, MACR = x86::r13, MACW = x86::r14, AACC = x86::r15, PARAM = x86::r11;
-	const tms57002::PoolRegs pregs{ DEV, MACC, MACR, MACW, AACC, PARAM };   // for tiny-op inline emission
 
 	const int nsteps = int(order.size());
 	if (nsteps == 0)

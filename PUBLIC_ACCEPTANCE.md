@@ -5,7 +5,7 @@ Profligacy.  A green row proves only the named observation.  Final product
 status comes from machine-produced receipts bound to the exact Profligacy tree
 and dependency commits; this tracked document is not a substitute for them.
 
-Official MAME base: `678947615f6742c65223423123869f80d3c885b1`
+Official MAME base: `a60f95ea04a4f9b4bd950c88068cce1dcdc04b6e`
 
 Publication branch: `profligacy-public-v1`
 

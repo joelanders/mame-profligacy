@@ -13,7 +13,6 @@ NO_OPENGL="${NO_OPENGL:-1}"
 NO_USE_MIDI="${NO_USE_MIDI:-1}"
 NO_USE_PORTAUDIO="${NO_USE_PORTAUDIO:-1}"
 USE_QTDEBUG="${USE_QTDEBUG:-0}"
-NOWERROR="${NOWERROR:-1}"
 SOURCES="src/mame/korg/korgprophecy.cpp"
 
 if [[ "${1:-}" == "--regen" ]]; then
@@ -21,18 +20,30 @@ if [[ "${1:-}" == "--regen" ]]; then
 	shift
 fi
 
-exec make \
-	"-j${JOBS}" \
-	"REGENIE=${REGENIE}" \
-	"PRECOMPILE=0" \
-	"SUBTARGET=${SUBTARGET}" \
-	"SOURCES=${SOURCES}" \
-	"OSD=${OSD}" \
-	"USE_LIBSDL=${USE_LIBSDL}" \
-	"NO_OPENGL=${NO_OPENGL}" \
-	"NO_USE_MIDI=${NO_USE_MIDI}" \
-	"NO_USE_PORTAUDIO=${NO_USE_PORTAUDIO}" \
-	"USE_QTDEBUG=${USE_QTDEBUG}" \
-	"NOWERROR=${NOWERROR}" \
-	"IGNORE_GIT=1" \
-	"$@"
+MAKE_ARGS=(
+	"-j${JOBS}"
+	"REGENIE=${REGENIE}"
+	"PRECOMPILE=0"
+	"SUBTARGET=${SUBTARGET}"
+	"SOURCES=${SOURCES}"
+	"OSD=${OSD}"
+	"USE_QTDEBUG=${USE_QTDEBUG}"
+	"IGNORE_GIT=1"
+)
+
+if [[ "${OSD}" != "windows" ]]; then
+	MAKE_ARGS+=(
+		"USE_LIBSDL=${USE_LIBSDL}"
+		"NO_OPENGL=${NO_OPENGL}"
+		"NO_USE_MIDI=${NO_USE_MIDI}"
+		"NO_USE_PORTAUDIO=${NO_USE_PORTAUDIO}"
+	)
+fi
+
+# Focused publication builds are warning-clean by default.  Set NOWERROR=1
+# explicitly only when diagnosing an inherited toolchain warning.
+if [[ -n "${NOWERROR:-}" ]]; then
+	MAKE_ARGS+=("NOWERROR=${NOWERROR}")
+fi
+
+exec make "${MAKE_ARGS[@]}" "$@"

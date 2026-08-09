@@ -1053,7 +1053,7 @@ u8 v55_device::special_irq_vector(int source) const
 	const int timer = timer_irq_index_from_source(source);
 	if (timer >= 0)
 		return timer_irq_vector(timer_irq_source(timer));
-	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	if (source == SPECIAL_IRQ_ADC)
 		return 37;
 
 	return 0xff;
@@ -1066,7 +1066,7 @@ u8 v55_device::special_irq_priority(int source) const
 	const int timer = timer_irq_index_from_source(source);
 	if (timer >= 0)
 		return timer_irq_priority(timer_irq_source(timer));
-	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	if (source == SPECIAL_IRQ_ADC)
 		return adc_irq_priority();
 
 	return 0xff;
@@ -1140,7 +1140,7 @@ void v55_device::clear_special_irq_source(int source)
 		return;
 	}
 
-	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	if (source == SPECIAL_IRQ_ADC)
 	{
 		m_adc_irq_in_service = false;
 		m_sfr[0x0e5] &= ~u8(0x80);
@@ -1231,7 +1231,7 @@ int v55_device::select_internal_special_irq() const
 
 	if (m_adc_irq_pending && !m_adc_irq_in_service && adc_irq_enabled())
 	{
-		const int adc_source = SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT;
+		const int adc_source = SPECIAL_IRQ_ADC;
 		const u8 adc_priority = adc_irq_priority();
 		if (can_accept_priority(adc_priority) && ((best_source < 0) || (adc_priority < best_priority)))
 		{
@@ -1336,7 +1336,7 @@ bool v55_device::handle_special_int_ack()
 		return true;
 	}
 
-	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	if (source == SPECIAL_IRQ_ADC)
 	{
 		if (!adc_irq_bankswitch())
 			return false;
@@ -1384,7 +1384,7 @@ void v55_device::v55_fint()
 		return;
 	}
 
-	if (source == (SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT))
+	if (source == SPECIAL_IRQ_ADC)
 	{
 		const int popped = (current_special_irq_stack_source() >= 0) ? pop_special_irq_stack_source() : source;
 		clear_special_irq_source(popped);

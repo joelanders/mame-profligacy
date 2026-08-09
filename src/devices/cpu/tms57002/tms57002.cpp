@@ -43,7 +43,6 @@ tms57002_device::tms57002_device(const machine_config &mconfig, const char *tag,
 	, m_serial_input_prev_valid(0)
 	, m_serial_input_pending_valid(0)
 	, m_serial_output_pending_valid(0)
-	, m_pending_pre_transfer(pending_pre_transfer_type::none)
 	, m_pending_pre_transfer_addr(0)
 	, m_pending_pre_transfer_value(0)
 	, m_pending_pre_transfer_pc(0)
@@ -85,6 +84,7 @@ tms57002_device::tms57002_device(const machine_config &mconfig, const char *tag,
 	, m_debug_smhd_raw_path(false)
 	, m_debug_smld_raw_path(false)
 	, st0(0), st1(0), sti(0), txrd(0)
+	, m_pending_pre_transfer(pending_pre_transfer_type::none)
 	, m_dready_callback(*this)
 	, m_pc0_callback(*this)
 	, m_empty_callback(*this)
@@ -734,7 +734,7 @@ int tms57002_device::xm_required_cycles() const
 	return std::max(cycles, xm_required_fetches());
 }
 
-inline void tms57002_device::xm_step_read()
+void tms57002_device::xm_step_read()
 {
 	xm_cycles++;
 
@@ -793,7 +793,7 @@ inline void tms57002_device::xm_step_read()
 		xm_adr = adr+1;
 }
 
-inline void tms57002_device::xm_step_write()
+void tms57002_device::xm_step_write()
 {
 	xm_cycles++;
 

@@ -334,6 +334,8 @@ public:
 		TIMER_IRQ_INTCM31,
 		TIMER_IRQ_COUNT
 	};
+	static constexpr unsigned SPECIAL_IRQ_ADC = unsigned(SERIAL_IRQ_COUNT) + unsigned(TIMER_IRQ_COUNT);
+	static constexpr unsigned SPECIAL_IRQ_COUNT = SPECIAL_IRQ_ADC + 1;
 
 	v55_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
@@ -510,7 +512,7 @@ private:
 	bool m_adc_irq_in_service;
 	u8 m_internal_serial_irq_pending;
 	u8 m_internal_serial_irq_in_service;
-	std::array<u8, SERIAL_IRQ_COUNT + TIMER_IRQ_COUNT + 1> m_special_irq_stack;
+	std::array<u8, SPECIAL_IRQ_COUNT> m_special_irq_stack;
 	u8 m_special_irq_stack_depth;
 	serial_irq_mode m_serial_irq_mode;
 	bool m_timer_irq_experiment;

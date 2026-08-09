@@ -8,10 +8,15 @@ push by accident.
 ## Base and import boundary
 
 - Official upstream: `https://github.com/mamedev/mame.git`
-- Official base: `678947615f6742c65223423123869f80d3c885b1`
-- Base date: 2026-02-25
+- Official base: `a60f95ea04a4f9b4bd950c88068cce1dcdc04b6e`
+- Base date: 2026-08-08
 - Local publication branch: `profligacy-public-v1`
 - Sanitized source-side checkpoint: `63d4503e3dd`
+
+The six sanitized publication commits were rebased onto this base after its
+official upstream Linux, macOS, and Windows workflows all passed on 2026-08-09.
+This replaced the initial February import base without importing private refs
+or ancestry.
 
 The source-side checkpoint is an identifier for the private integration
 snapshot only.  Its Git objects and ancestry were not imported.  Files were
@@ -91,7 +96,7 @@ Run the publication audit on committed history:
 python3 scripts/korgprophecy_publication_audit.py
 python3 scripts/korgprophecy_control_audit.py
 python3 scripts/korgprophecy_corpus_policy.py
-python3 scripts/korgprophecy_no_rom_gate.py
+./scripts/korgprophecy_no_rom_gate.sh
 ```
 
 Before committing, stage the proposed snapshot and run:

@@ -708,8 +708,6 @@ void korgprophecy_state::machine_start()
 		}
 	}
 
-	m_leds.resolve();
-
 	save_item(NAME(m_mmio_shadow));
 	save_item(NAME(m_v55_scratch));
 	save_item(NAME(m_lcd_data_mode));
@@ -3558,7 +3556,7 @@ void korgprophecy_state::prophecy(machine_config &config)
 	m_dsp2->add_route(0, *m_dsp3, 1.0, 0);
 	m_dsp2->add_route(1, *m_dsp3, 1.0, 1);
 
-	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_LCD));
+	screen_device &screen(SCREEN(config, "screen").set_lcd());
 	screen.set_color(rgb_t::green());
 	screen.set_refresh_hz(60);
 	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500));
