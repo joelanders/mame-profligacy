@@ -273,6 +273,7 @@ private:
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
 	TIMER_CALLBACK_MEMBER(mailbox_lie_tick);
 	TIMER_CALLBACK_MEMBER(v55_h8_service_tick);
+	TIMER_CALLBACK_MEMBER(h8_irq1_frame_complete);
 	TIMER_CALLBACK_MEMBER(v55_h8_tx_bit_tick);
 	TIMER_CALLBACK_MEMBER(h8_txd_sample_tick);
 	TIMER_CALLBACK_MEMBER(v55_txd1_sample_tick);
@@ -437,6 +438,7 @@ private:
 	bool m_pulse_virtual_only = false;
 	bool m_evtq_note_inject = false;
 	emu_timer *m_v55_h8_service_timer = nullptr;
+	emu_timer *m_h8_irq1_frame_timer = nullptr;
 	emu_timer *m_v55_h8_tx_timer = nullptr;
 	emu_timer *m_h8_txd_sample_timer = nullptr;
 	emu_timer *m_v55_txd1_sample_timer = nullptr;
@@ -979,6 +981,7 @@ void korgprophecy_state::machine_start()
 	}
 	m_mb_lie_timer = timer_alloc(FUNC(korgprophecy_state::mailbox_lie_tick), this);
 	m_v55_h8_service_timer = timer_alloc(FUNC(korgprophecy_state::v55_h8_service_tick), this);
+	m_h8_irq1_frame_timer = timer_alloc(FUNC(korgprophecy_state::h8_irq1_frame_complete), this);
 	m_v55_h8_tx_timer = timer_alloc(FUNC(korgprophecy_state::v55_h8_tx_bit_tick), this);
 	m_h8_txd_sample_timer = timer_alloc(FUNC(korgprophecy_state::h8_txd_sample_tick), this);
 	m_v55_txd1_sample_timer = timer_alloc(FUNC(korgprophecy_state::v55_txd1_sample_tick), this);
@@ -1117,6 +1120,8 @@ void korgprophecy_state::machine_reset()
 	}
 	if (m_v55_h8_service_timer != nullptr)
 		m_v55_h8_service_timer->adjust(attotime::from_usec(100), 0, attotime::from_usec(100));
+	if (m_h8_irq1_frame_timer != nullptr)
+		m_h8_irq1_frame_timer->adjust(attotime::never);
 	if (m_v55_h8_tx_timer != nullptr)
 		m_v55_h8_tx_timer->adjust(attotime::never);
 	if (m_h8_txd_sample_timer != nullptr)
@@ -1412,6 +1417,22 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::v55_h8_service_tick)
 		space.write_word(MB_PHYS_A70E, count - 1);
 		start_v55_h8_tx(data);
 		return;
+	}
+}
+
+TIMER_CALLBACK_MEMBER(korgprophecy_state::h8_irq1_frame_complete)
+{
+	// A start-bit IRQ lets the H8 parse the preceding byte.  If the V55
+	// transmit buffer is empty in the stop bit, no next start bit will wake
+	// the parser for the final byte in the burst, so supply that missing wake.
+	if (v55_sfr_byte(0x74) & 0x20)
+	{
+		address_space &h8space = m_subcpu->space(AS_PROGRAM);
+		const u16 cmd_w = h8space.read_dword(0x048294) & 0x03ff;
+		const u16 cmd_r = h8space.read_dword(0x048298) & 0x03ff;
+		const bool rdr_full = BIT(h8space.read_byte(0x0fffb4), 6);
+		if (cmd_w != cmd_r || rdr_full)
+			pulse_h8_irq1("TXD0_BURST_COMPLETE");
 	}
 }
 
@@ -2470,6 +2491,11 @@ void korgprophecy_state::v55_txd_w(int state)
 	{
 		m_v55_txd_byte_end = machine().time() + h8_sci0_bit_period() * 10;
 		pulse_h8_irq1("TXD0_START");
+		// Sample late in the stop bit, after the H8 SCI has accepted the frame.
+		// A following start bit reschedules this timer for a back-to-back byte.
+		const attotime wire_bit = attotime::from_hz(
+			u32(double(m_subcpu->unscaled_clock()) / 384.0 + 0.5));
+		m_h8_irq1_frame_timer->adjust(wire_bit * 39 / 4);
 	}
 
 	m_subcpu->sci_rx_w<0>(state);
