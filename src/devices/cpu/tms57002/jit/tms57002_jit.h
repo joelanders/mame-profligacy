@@ -160,6 +160,7 @@ private:
 	long m_pooled_runs = 0;         // frames executed via a compiled pooled frame (M3 native-branch path)
 	long m_pooled_fallbacks = 0;    // frames routed to the native frame instead (fallback)
 	long m_pooled_compiles = 0;     // M4: distinct asmjit compiles done (a cache reuse does NOT bump this)
+	long m_stats_calls = 0;          // diagnostic cadence, per DSP/Jit (never shared across devices)
 	// M3: the program-order PC list (pc, chain-head ipc) for the pooled frame — EVERY reachable PC,
 	// decoded at its deterministic st1 (branches skip no mode-setters), so both branch paths compile.
 	std::vector<std::pair<int, int>> m_pooled_order;

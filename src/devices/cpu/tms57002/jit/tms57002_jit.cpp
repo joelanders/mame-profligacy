@@ -2515,11 +2515,20 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 	const int ms = max_steps > 0 ? max_steps : 1;
 	// stats gate hoisted to a static (2026-07-05): this function runs PER INSTRUCTION during
 	// unsafe-window retries (~10M calls in a 15s note render) — a per-call getenv() environ scan
-	// here is real time. NOTE: `n` is process-global (all 3 DSPs) while runs/fallbacks/compiles
-	// are per-Jit — the printed line mixes scopes; read it as "calls=total, counters=one DSP's".
+	// here is real time. The cadence and counters are per-Jit; include the device tag so
+	// automated packaged-product gates can distinguish all three physical DSPs.
 	// KPSHIP-TRACE: JIT pooled-frame stats to stderr. Strip.
 	static const bool s_pf4_stats = std::getenv("KPROP_PF4_STATS") != nullptr;
-	if (s_pf4_stats) { static long n = 0; if ((++n % 20000) == 0) std::fprintf(stderr, "[pf4] calls=%ld runs=%ld fallbacks=%ld compiles=%ld forced_midframe=%ld\n", n, m_pooled_runs, m_pooled_fallbacks, m_pooled_compiles, s_forced_midframe_fallback_hits); }
+	if (s_pf4_stats && (++m_stats_calls % 20000) == 0)
+	{
+		std::fprintf(stderr,
+				"KPROP_JIT_RUNTIME tag=%s calls=%ld runs=%ld fallbacks=%ld compiles=%ld forced_midframe=%ld\n",
+				dsp.tag(), m_stats_calls, m_pooled_runs, m_pooled_fallbacks,
+				m_pooled_compiles, s_forced_midframe_fallback_hits);
+		std::fprintf(stderr, "[pf4] calls=%ld runs=%ld fallbacks=%ld compiles=%ld forced_midframe=%ld\n",
+				m_stats_calls, m_pooled_runs, m_pooled_fallbacks,
+				m_pooled_compiles, s_forced_midframe_fallback_hits);
+	}
 
 	// Render conditions not met (serial cycle model / pending cmem / debug forces) -> caller rt_runs.
 	// Also skip while a PLOAD/CLOAD is in progress: the program/coefficients are mid-upload (the program
