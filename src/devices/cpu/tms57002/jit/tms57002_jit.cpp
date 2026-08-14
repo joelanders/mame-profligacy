@@ -1507,13 +1507,31 @@ void scan_pool(BaseEmitter &a, tms57002_device &dsp,
 	}
 }
 
+bool order_reads_cmem(tms57002_device &dsp, const std::vector<std::pair<int, int>> &order)
+{
+	for (const auto &entry : order)
+	{
+		int cur = entry.second;
+		for (int steps = 0; steps <= 64; ++steps)
+		{
+			const unsigned op = dsp.jit_inst_op(cur);
+			if (op < 4)
+				break;
+			if (tms57002::op_reads_cmem(dsp, op))
+				return true;
+			cur = dsp.jit_inst_next(cur);
+		}
+	}
+	return false;
+}
+
 #ifdef KPROP_JIT_X64
 // Emit ONE program's pooled driver (prologue..ret) into `a`, calling into the (already-scanned) shared
 // `pool`. Bind the caller's entry label BEFORE calling this — the driver's first instruction is the
 // prologue. Returns false on unsupported shape (caller bails). Pool bodies are emitted SEPARATELY (once).
 bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
                         const std::vector<std::pair<int, int>> &order, const std::map<unsigned, PoolBody> &pool,
-                        const Thunks &thunks)
+                        const Thunks &thunks, bool cmem_per_op)
 {
 	const int off_macc = int(tms57002_device::jit_off_macc());
 	const int off_macc_r = int(tms57002_device::jit_off_macc_read());
@@ -1588,7 +1606,8 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 			cur = dsp.jit_inst_next(cur);
 		}
 	}
-	const bool hoist_cmem_guard = dsp.jit_pf4_cmem_deopt() && program_reads_cmem;
+	const bool hoist_cmem_guard = dsp.jit_pf4_cmem_deopt() && program_reads_cmem
+		&& !cmem_per_op;
 
 	// A label per emitted PC (branch targets reference these). Per-driver (not shared).
 	std::map<int, Label> pc_label;
@@ -1974,7 +1993,7 @@ void emit_thunks(a64::Assembler &a, const Thunks &t)
 // comments (entry table, F2/F5-era guards, timeslice contract, fallback); they apply verbatim.
 bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
                         const std::vector<std::pair<int, int>> &order, const std::map<unsigned, PoolBody> &pool,
-                        const Thunks &thunks)
+                        const Thunks &thunks, bool cmem_per_op)
 {
 	const int off_macc = int(tms57002_device::jit_off_macc());
 	const int off_macc_r = int(tms57002_device::jit_off_macc_read());
@@ -2012,7 +2031,8 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 			cur = dsp.jit_inst_next(cur);
 		}
 	}
-	const bool hoist_cmem_guard = cmem_deopt && program_reads_cmem;
+	const bool hoist_cmem_guard = cmem_deopt && program_reads_cmem
+		&& !cmem_per_op;
 
 	std::map<int, Label> pc_label;
 	for (int k = 0; k < nsteps; k++)
@@ -2336,7 +2356,8 @@ void emit_pool_bodies(a64::Assembler &a, const std::map<unsigned, PoolBody> &poo
 }  // namespace
 #endif
 
-Jit::FrameFn Jit::compile_frame_pooled(tms57002_device &dsp, int max_steps, int start_pc)
+Jit::FrameFn Jit::compile_frame_pooled(tms57002_device &dsp, int max_steps, int start_pc,
+	bool cmem_per_op)
 {
 #if defined(KPROP_JIT_X64) || defined(KPROP_JIT_A64)
 	using namespace asmjit;
@@ -2406,7 +2427,7 @@ Jit::FrameFn Jit::compile_frame_pooled(tms57002_device &dsp, int max_steps, int 
 	std::map<unsigned, PoolBody> pool;
 	scan_pool(a, dsp, m_pooled_order, pool);
 	Thunks thunks{ a.new_label(), a.new_label(), a.new_label(), a.new_label(), a.new_label() };
-	if (!emit_pooled_driver(a, dsp, m_pooled_order, pool, thunks))
+	if (!emit_pooled_driver(a, dsp, m_pooled_order, pool, thunks, cmem_per_op))
 		return nullptr;
 	emit_pool_bodies(a, pool);
 	emit_thunks(a, thunks);
@@ -2420,7 +2441,7 @@ Jit::FrameFn Jit::compile_frame_pooled(tms57002_device &dsp, int max_steps, int 
 		return nullptr;
 	return out;
 #else
-	(void)dsp; (void)max_steps; (void)start_pc;
+	(void)dsp; (void)max_steps; (void)start_pc; (void)cmem_per_op;
 	return nullptr;
 #endif
 }
@@ -2454,7 +2475,7 @@ bool Jit::compile_fused(tms57002_device *const devs[3], const std::vector<std::p
 	for (int g = 0; g < 3; g++)
 	{
 		a.bind(entry[g]);
-		if (!emit_pooled_driver(a, *devs[g], *orders[g], pool, thunks))
+		if (!emit_pooled_driver(a, *devs[g], *orders[g], pool, thunks, false))
 			return false;
 	}
 	const size_t drivers_bytes = code.code_size();   // 3 drivers only (before the shared pool bodies)
@@ -2502,6 +2523,9 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 	const int start_pc = dsp.jit_pc();
 	const u32 start_st1 = dsp.dbg_st1() & tms57002_device::jit_st1_cache();
 	const u32 ver = dsp.jit_program_version();
+	auto active_fn = [&]() -> FrameFn {
+		return dsp.jit_cmem_pending() && m_active->cmem_fn ? m_active->cmem_fn : m_active->fn;
+	};
 
 	// STEADY STATE: program unchanged AND the active entry matches (st1/ms/pc) — run its compiled frame
 	// directly. One int compare per frame; no hashing, no re-decode. This is the common case.
@@ -2509,7 +2533,7 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 		&& m_active->max_steps == ms && m_active->start_pc == start_pc && m_active->start_st1 == start_st1)
 	{
 		m_pooled_runs++;
-		m_active->fn(&dsp);
+		active_fn()(&dsp);
 		dsp.jit_finalize_if_idle();
 		return dsp.jit_end_frame();
 	}
@@ -2547,7 +2571,7 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 		// then run the cached frame. NO asmjit codegen — the M4 reuse win.
 		build_pooled_order(dsp, start_pc, ms);
 		m_pooled_runs++;
-		m_active->fn(&dsp);
+		active_fn()(&dsp);
 		dsp.jit_finalize_if_idle();
 		return dsp.jit_end_frame();
 	}
@@ -2559,13 +2583,16 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 	build_pooled_order(dsp, start_pc, ms);
 	const auto result = finish_via_interp();
 	PooledEntry &e = m_pooled_cache[key];
-	e.fn = compile_frame_pooled(dsp, ms, start_pc);
+	e.fn = compile_frame_pooled(dsp, ms, start_pc, false);
+	if (e.fn && dsp.jit_pf4_cmem_deopt() && order_reads_cmem(dsp, m_pooled_order))
+		e.cmem_fn = compile_frame_pooled(dsp, ms, start_pc, true);
 	e.order = m_pooled_order;
 	e.max_steps = ms;
 	e.start_pc = start_pc;
 	e.start_st1 = start_st1;
 	e.failed = (e.fn == nullptr);
 	if (e.fn) m_pooled_compiles++;
+	if (e.cmem_fn) m_pooled_compiles++;
 	m_active = &e;
 	return result;
 }
@@ -2648,6 +2675,9 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 
 	const int cur_pc = dsp.jit_pc();
 	const u32 ver = dsp.jit_program_version();
+	auto active_fn = [&]() -> FrameFn {
+		return dsp.jit_cmem_pending() && m_active->cmem_fn ? m_active->cmem_fn : m_active->fn;
+	};
 	// NOTE: the compiled frame runs on the scheduler's CURRENT icount (the timeslice), NOT a fresh budget —
 	// its per-PC posts decrement icount and it exits at icount<=0 (mid-frame), exactly like the
 	// interpreter's `while(icount>0)`. Overriding icount (running the whole frame regardless of the
@@ -2674,7 +2704,7 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 			&& ((cur_pc - m_active->start_pc) & 0xff) < int(m_active->order.size()))
 		{
 			m_pooled_runs++;
-			m_active->fn(&dsp);
+			active_fn()(&dsp);
 			dsp.jit_finalize_if_idle();
 			m_pooled_partial = !dsp.jit_is_idle();
 			return true;
@@ -2697,7 +2727,7 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 		&& m_active->max_steps == ms && m_active->start_pc == start_pc && m_active->start_st1 == start_st1)
 	{
 		m_pooled_runs++;
-		m_active->fn(&dsp);
+		active_fn()(&dsp);
 		dsp.jit_finalize_if_idle();
 		m_pooled_partial = !dsp.jit_is_idle();
 		return true;
@@ -2715,7 +2745,7 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 		// decode-only + snapshot-safe; happens once per program switch, not per frame (steady state above).
 		build_pooled_order(dsp, start_pc, ms);
 		m_pooled_runs++;
-		m_active->fn(&dsp);
+		active_fn()(&dsp);
 		dsp.jit_finalize_if_idle();
 		m_pooled_partial = !dsp.jit_is_idle();
 		return true;
@@ -2726,13 +2756,16 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 	// next sample on. build_pooled_order snapshot-restores, so the device is untouched for the rt_run.
 	build_pooled_order(dsp, start_pc, ms);
 	PooledEntry &e = m_pooled_cache[key];
-	e.fn = compile_frame_pooled(dsp, ms, start_pc);
+	e.fn = compile_frame_pooled(dsp, ms, start_pc, false);
+	if (e.fn && dsp.jit_pf4_cmem_deopt() && order_reads_cmem(dsp, m_pooled_order))
+		e.cmem_fn = compile_frame_pooled(dsp, ms, start_pc, true);
 	e.order = m_pooled_order;
 	e.max_steps = ms;
 	e.start_pc = start_pc;
 	e.start_st1 = start_st1;
 	e.failed = (e.fn == nullptr);
 	if (e.fn) m_pooled_compiles++;
+	if (e.cmem_fn) m_pooled_compiles++;
 	m_active = &e;
 	return false;
 }

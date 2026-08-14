@@ -368,6 +368,7 @@ public:
 	static u32 jit_off_cmem_force() { return u32(__builtin_offsetof(tms57002_device, m_debug_cmem_force)); }
 	static u32 jit_off_pf4_force() { return u32(__builtin_offsetof(tms57002_device, m_pf4_force_cmem_unsafe)); }
 	bool jit_pf4_cmem_deopt() const { return m_pf4_cmem_deopt; }
+	bool jit_cmem_pending() const { return update_counter_head != update_counter_tail; }
 	static u32 jit_off_creg() { return u32(__builtin_offsetof(tms57002_device, creg)); }   // mac/mpy write creg = get_cmem(ca)
 	static u32 jit_off_xoa() { return u32(__builtin_offsetof(tms57002_device, xoa)); }   // rde/wre XRAM offset addr
 	static u32 jit_off_xwr() { return u32(__builtin_offsetof(tms57002_device, xwr)); }   // wre XRAM write data
