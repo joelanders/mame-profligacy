@@ -2659,10 +2659,10 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 	}
 
 	// Render conditions not met (serial cycle model / pending cmem / debug forces) -> caller rt_runs.
-	// Also skip while a PLOAD/CLOAD is in progress: the program/coefficients are mid-upload (the program
-	// space is in flux), so hashing/compiling would read a transient program (and can crash). rt_run
-	// handles the load frames correctly; the pooled path resumes once the program settles.
-	if (!dsp.jit_pooled_safe() || dsp.jit_host_loading())
+	// PLOAD still disengages pooled execution because the program space is in flux. CLOAD is safe under
+	// the guarded-CMEM mode: its partial packet lives only in host[]; the completed value becomes visible
+	// by advancing the update-queue head, which the guarded entry observes before a CMEM-reading op.
+	if (!dsp.jit_pooled_safe() || dsp.jit_host_loading_unsafe())
 	{
 		// F1 (2026-07-05): keep m_pooled_partial PENDING here — deliberately. Unsafe conditions clear
 		// MID-FRAME (the H8 streams cmem updates; get_cmem drains the queue), and the pending flag makes

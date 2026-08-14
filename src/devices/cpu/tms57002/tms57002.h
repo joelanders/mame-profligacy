@@ -220,7 +220,16 @@ public:
 	// The interpreter stays the default + the bit-exact oracle (tms57002_jit_test).
 	void jit_begin_frame(const std::array<u32, 4> &frame);          // serial setup + sync_w
 	bool jit_is_idle() const { return (sti & S_IDLE) != 0; }        // program hit `idle`
-	bool jit_host_loading() const { return (sti & (IN_PLOAD | IN_CLOAD)) != 0; }   // M5: PLOAD/CLOAD in progress -> DSP program/coeffs in flux; the pooled path must not hash/compile then
+	// PLOAD mutates the program image and must always disengage pooled execution.
+	// CLOAD only assembles a coefficient packet in host[]; no CMEM-visible state
+	// changes until the complete packet is queued.  With the guarded CMEM entry
+	// enabled, pooled execution can therefore continue across CLOAD as well as the
+	// subsequent pending-update window.  Keep the old conservative behavior when
+	// that entry is disabled.
+	bool jit_host_loading_unsafe() const
+	{
+		return (sti & IN_PLOAD) || ((sti & IN_CLOAD) && !m_pf4_cmem_deopt);
+	}
 	void jit_step_one() { debug_run_cycles(1); }                    // one program instruction
 	std::array<u32, 4> jit_end_frame()                              // the 4 serial outputs
 	{ return { serial_output_pin(0), serial_output_pin(1), serial_output_pin(2), serial_output_pin(3) }; }
