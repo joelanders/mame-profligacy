@@ -38,6 +38,7 @@
         "KPROP_PF4_FORCE_CMEM_UNSAFE",
         "KPROP_PF4_FORCE_MIDFRAME_FALLBACK",
         "KPROP_PF4_MODE_UNSAFE_COMPILE",
+        "KPROP_PF4_OP_STATS",
         "KPROP_PF4_STATS",
         "KPROP_TRACE_DSP_SERIAL_OUTPUT_END",
         "KPROP_TRACE_DSP_SERIAL_OUTPUT_MAX",
@@ -51,8 +52,16 @@
       ]
     },
     "diagnostic_control": {
-      "release_disposition": "empty after publication cleanup; verification-load-bearing taps are deterministic test seams",
-      "names": []
+      "release_disposition": "retain as opt-in diagnostics used by public headless control-path regressions",
+      "names": [
+        "KPROP_CONTROL_FLIGHT_RECORDER",
+        "KPROP_LOG_CONTROL_HEALTH",
+        "KPROP_LOG_CONTROL_HEALTH_FINAL",
+        "KPROP_TRACE_H8_CONTROL_END",
+        "KPROP_TRACE_H8_CONTROL_EVENTS",
+        "KPROP_TRACE_H8_CONTROL_START",
+        "KPROP_V55_UART0_STOP_EDGE_LEAD_TICKS"
+      ]
     },
     "compatibility_or_stale_script_input": {
       "release_disposition": "empty after stale lifecycle inputs were retired and validated defaults were baked",
@@ -72,11 +81,19 @@
       "release_disposition": "not an environment control",
       "names": [
         "KPROP_ADC",
+        "KPROP_CONTROL_HEALTH",
         "KPROP_DSPHOSTMAP",
         "KPROP_DSPSEROUT",
+        "KPROP_FINAL_HEALTH",
+        "KPROP_FLIGHT",
+        "KPROP_FLIGHT_BEGIN",
+        "KPROP_FLIGHT_END",
         "KPROP_GUI",
+        "KPROP_H8CTL",
         "KPROP_H8V55_RXERR",
+        "KPROP_H8WIRE",
         "KPROP_JIT_A64",
+        "KPROP_JIT_RUNTIME",
         "KPROP_JIT_X64",
         "KPROP_LCD"
       ]
