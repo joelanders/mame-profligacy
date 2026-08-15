@@ -380,6 +380,7 @@ public:
 	// Board-link bit rate until the TXBRG/RXBRG/PRS decode is modeled. Must
 	// match the H8 SCI0 rate (h8_clock / 384 for Prophecy's boot SMR/BRR).
 	void set_uart0_bit_rate(u32 hz) { m_uart0_bit_rate = hz ? hz : 41'667; }
+	void set_uart0_stop_edge_lead_ticks(u32 ticks) { m_uart0_stop_edge_lead_ticks = ticks; }
 	u8 debug_logical_read_byte(offs_t address) { return mem_read_byte(address); }
 	u16 debug_logical_read_word(offs_t address) { return mem_read_word(address); }
 	void debug_logical_write_byte(offs_t address, u8 data) { mem_write_byte(address, data); }
@@ -505,6 +506,7 @@ private:
 	bool m_uart1_rx_full;
 	serial_irq_mode m_default_serial_irq_mode = serial_irq_mode::off;
 	u32 m_uart0_bit_rate = 41'667;
+	u32 m_uart0_stop_edge_lead_ticks = 0;
 	std::array<u8, TIMER_IRQ_COUNT> m_timer_irq_bank;
 	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_pending;
 	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_in_service;

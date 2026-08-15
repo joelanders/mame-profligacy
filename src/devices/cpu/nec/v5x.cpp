@@ -2083,7 +2083,16 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		m_uart0_txd_state = BIT(m_uart0_tx_byte, m_uart0_tx_bit);
 		m_txd0_handler(m_uart0_txd_state);
 		m_uart0_tx_bit++;
-		m_uart0_tx_timer->adjust(uart0_bit_period());
+		// Real asynchronous endpoints cannot have a receiver sample and the
+		// transmitter's stop edge at the exact same instant.  If requested by
+		// the board driver, lead only that edge by a tiny amount to make the
+		// scheduler ordering deterministic.  The time is returned to the stop
+		// bit below, so the baud rate and the following start edge do not move.
+		const attotime stop_edge_lead = clocks_to_attotime(m_uart0_stop_edge_lead_ticks);
+		m_uart0_tx_timer->adjust(
+			(m_uart0_tx_bit == 8 && stop_edge_lead < uart0_bit_period())
+				? uart0_bit_period() - stop_edge_lead
+				: uart0_bit_period());
 		return;
 	}
 
@@ -2092,7 +2101,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		m_uart0_txd_state = 1;
 		m_txd0_handler(1);
 		m_uart0_tx_bit++;
-		m_uart0_tx_timer->adjust(uart0_bit_period());
+		m_uart0_tx_timer->adjust(uart0_bit_period() + clocks_to_attotime(m_uart0_stop_edge_lead_ticks));
 		return;
 	}
 
