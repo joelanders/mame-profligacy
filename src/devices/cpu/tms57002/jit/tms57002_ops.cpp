@@ -1033,11 +1033,23 @@ void emit_op_pooled(x86::Assembler &a, const PoolRegs &r, tms57002_device &dsp, 
 		if (is("wre")) { load_d24(T0.r32(), T1, T2); a.mov(x86::dword_ptr(r.dev, o.xwr), T0.r32()); }
 		cmem_into(T0.r32(), T1);
 		a.mov(x86::dword_ptr(r.dev, o.xoa), T0.r32());
+		// The pooled body is entered through an internal call, so RSP is eight
+		// bytes off call-site alignment here. Windows also needs 32 bytes of
+		// shadow space for the C++ helper.
+#if defined(_WIN32)
+		a.mov(x86::rcx, r.dev);
+		a.sub(x86::rsp, Imm(40));
+#else
 		a.mov(x86::rdi, r.dev);
 		a.sub(x86::rsp, Imm(8));
+#endif
 		a.mov(x86::rax, Imm(uint64_t(&ops_xm_init)));
 		a.call(x86::rax);
+#if defined(_WIN32)
+		a.add(x86::rsp, Imm(40));
+#else
 		a.add(x86::rsp, Imm(8));
+#endif
 		a.or_(x86::dword_ptr(r.dev, o.sti), Imm(flag));
 		a.bind(armed);
 		return;
