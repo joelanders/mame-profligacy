@@ -47,6 +47,13 @@ public:
 	u8 rdr_r();
 	void scmr_w(u8 data);
 	u8 scmr_r();
+	u64 debug_rx_error_count() const { return m_rx_error_count; }
+	u64 debug_rx_overruns() const { return m_rx_error_types[0]; }
+	u64 debug_rx_framing_errors() const { return m_rx_error_types[1]; }
+	u64 debug_rx_parity_errors() const { return m_rx_error_types[2]; }
+	u8 debug_last_rx_error() const { return m_last_rx_error; }
+	u32 debug_last_rx_error_pc() const { return m_last_rx_error_pc; }
+	double debug_last_rx_error_time() const { return m_last_rx_error_time; }
 
 	void do_rx_w(int state);
 	void do_clk_w(int state);
@@ -119,6 +126,11 @@ protected:
 
 	u8 m_rdr, m_tdr, m_smr, m_scr, m_ssr, m_ssr_read, m_brr, m_rsr, m_tsr;
 	u64 m_clock_event, m_clock_step, m_divider;
+	u64 m_rx_error_count;
+	std::array<u64, 3> m_rx_error_types;
+	u8 m_last_rx_error;
+	u32 m_last_rx_error_pc;
+	double m_last_rx_error_time;
 
 	std::string m_last_clock_message;
 
@@ -139,6 +151,7 @@ protected:
 
 	void rx_start();
 	void rx_done();
+	void record_rx_error(u8 flag);
 	void rx_async_tick();
 	void rx_async_step();
 	void rx_sync_tick();

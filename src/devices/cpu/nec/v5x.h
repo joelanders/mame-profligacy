@@ -380,6 +380,27 @@ public:
 	// Board-link bit rate until the TXBRG/RXBRG/PRS decode is modeled. Must
 	// match the H8 SCI0 rate (h8_clock / 384 for Prophecy's boot SMR/BRR).
 	void set_uart0_bit_rate(u32 hz) { m_uart0_bit_rate = hz ? hz : 41'667; }
+	void set_uart0_stop_edge_lead_ticks(u32 ticks) { m_uart0_stop_edge_lead_ticks = ticks; }
+	u8 debug_uart0_mode() const { return m_sfr[0x173]; }
+	u8 debug_uart0_status() const { return m_sfr[0x174]; }
+	u8 debug_uart0_data() const { return m_sfr[0x175]; }
+	u8 debug_uart0_tx_byte() const { return m_uart0_tx_byte; }
+	bool debug_uart0_tx_active() const { return m_uart0_tx_active; }
+	bool debug_uart0_tx_loaded() const { return m_uart0_tx_loaded; }
+	bool debug_uart0_rx_full() const { return m_uart0_rx_full; }
+	u8 debug_uart0_cts() const { return m_cts0; }
+	u8 debug_serial_irq_control(serial_irq_source source) const
+	{
+		return m_sfr[0x0da + unsigned(source)];
+	}
+	u64 debug_uart1_rx_bytes() const { return m_uart1_rx_bytes; }
+	u64 debug_uart1_rx_consumed() const { return m_uart1_rx_consumed; }
+	u64 debug_uart1_rx_overruns() const { return m_uart1_rx_overruns; }
+	u64 debug_uart1_rx_framing_errors() const { return m_uart1_rx_framing_errors; }
+	u8 debug_uart1_status() const { return m_sfr[0x17c]; }
+	u8 debug_uart1_data() const { return m_sfr[0x17e]; }
+	u8 debug_serial_irq_pending() const { return m_internal_serial_irq_pending; }
+	u8 debug_serial_irq_in_service() const { return m_internal_serial_irq_in_service; }
 	u8 debug_logical_read_byte(offs_t address) { return mem_read_byte(address); }
 	u16 debug_logical_read_word(offs_t address) { return mem_read_word(address); }
 	void debug_logical_write_byte(offs_t address, u8 data) { mem_write_byte(address, data); }
@@ -503,8 +524,13 @@ private:
 	bool m_uart1_tx_loaded;
 	bool m_uart1_rx_active;
 	bool m_uart1_rx_full;
+	u64 m_uart1_rx_bytes;
+	u64 m_uart1_rx_consumed;
+	u64 m_uart1_rx_overruns;
+	u64 m_uart1_rx_framing_errors;
 	serial_irq_mode m_default_serial_irq_mode = serial_irq_mode::off;
 	u32 m_uart0_bit_rate = 41'667;
+	u32 m_uart0_stop_edge_lead_ticks = 0;
 	std::array<u8, TIMER_IRQ_COUNT> m_timer_irq_bank;
 	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_pending;
 	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_in_service;

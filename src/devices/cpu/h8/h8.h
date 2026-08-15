@@ -67,6 +67,13 @@ public:
 
 	template<int Sci> void sci_rx_w(int state) { m_sci[Sci]->do_rx_w(state); }
 	template<int Sci> void sci_clk_w(int state) { m_sci[Sci]->do_clk_w(state); }
+	template<int Sci> u64 debug_sci_rx_error_count() const { return m_sci[Sci]->debug_rx_error_count(); }
+	template<int Sci> u64 debug_sci_rx_overruns() const { return m_sci[Sci]->debug_rx_overruns(); }
+	template<int Sci> u64 debug_sci_rx_framing_errors() const { return m_sci[Sci]->debug_rx_framing_errors(); }
+	template<int Sci> u64 debug_sci_rx_parity_errors() const { return m_sci[Sci]->debug_rx_parity_errors(); }
+	template<int Sci> u8 debug_sci_last_rx_error() const { return m_sci[Sci]->debug_last_rx_error(); }
+	template<int Sci> u32 debug_sci_last_rx_error_pc() const { return m_sci[Sci]->debug_last_rx_error_pc(); }
+	template<int Sci> double debug_sci_last_rx_error_time() const { return m_sci[Sci]->debug_last_rx_error_time(); }
 
 	void nvram_set_battery(int state) { m_nvram_battery = bool(state); } // default is 1 (nvram_enable_backup needs to be true)
 	void nvram_set_default_value(u16 val) { m_nvram_defval = val; } // default is 0

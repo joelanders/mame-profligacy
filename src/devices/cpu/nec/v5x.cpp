@@ -928,6 +928,10 @@ v55_device::v55_device(const machine_config &mconfig, const char *tag, device_t 
 	, m_uart1_tx_loaded(false)
 	, m_uart1_rx_active(false)
 	, m_uart1_rx_full(false)
+	, m_uart1_rx_bytes(0)
+	, m_uart1_rx_consumed(0)
+	, m_uart1_rx_overruns(0)
+	, m_uart1_rx_framing_errors(0)
 	, m_timer_irq_bank{}
 	, m_timer_irq_pending{}
 	, m_timer_irq_in_service{}
@@ -1707,7 +1711,11 @@ u8 v55_device::sfr_r(offs_t offset)
 	case 0x17e:
 		update_uart1_status();
 		if (!machine().side_effects_disabled())
+		{
+			if (m_uart1_rx_full)
+				++m_uart1_rx_consumed;
 			m_uart1_rx_full = false;
+		}
 		return m_sfr[0x17e];
 	}
 
@@ -1846,6 +1854,10 @@ void v55_device::device_start()
 	save_item(NAME(m_uart1_tx_loaded));
 	save_item(NAME(m_uart1_rx_active));
 	save_item(NAME(m_uart1_rx_full));
+	save_item(NAME(m_uart1_rx_bytes));
+	save_item(NAME(m_uart1_rx_consumed));
+	save_item(NAME(m_uart1_rx_overruns));
+	save_item(NAME(m_uart1_rx_framing_errors));
 	save_item(NAME(m_timer_irq_bank));
 	save_item(NAME(m_timer_irq_pending));
 	save_item(NAME(m_timer_irq_in_service));
@@ -1944,6 +1956,10 @@ void v55_device::device_reset()
 	m_uart1_tx_loaded = false;
 	m_uart1_rx_active = false;
 	m_uart1_rx_full = false;
+	m_uart1_rx_bytes = 0;
+	m_uart1_rx_consumed = 0;
+	m_uart1_rx_overruns = 0;
+	m_uart1_rx_framing_errors = 0;
 	m_adc_running = false;
 	m_timer_irq_pending.fill(false);
 	m_timer_irq_in_service.fill(false);
@@ -2083,7 +2099,16 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		m_uart0_txd_state = BIT(m_uart0_tx_byte, m_uart0_tx_bit);
 		m_txd0_handler(m_uart0_txd_state);
 		m_uart0_tx_bit++;
-		m_uart0_tx_timer->adjust(uart0_bit_period());
+		// Real asynchronous endpoints cannot have a receiver sample and the
+		// transmitter's stop edge at the exact same instant.  If requested by
+		// the board driver, lead only that edge by a tiny amount to make the
+		// scheduler ordering deterministic.  The time is returned to the stop
+		// bit below, so the baud rate and the following start edge do not move.
+		const attotime stop_edge_lead = clocks_to_attotime(m_uart0_stop_edge_lead_ticks);
+		m_uart0_tx_timer->adjust(
+			(m_uart0_tx_bit == 8 && stop_edge_lead < uart0_bit_period())
+				? uart0_bit_period() - stop_edge_lead
+				: uart0_bit_period());
 		return;
 	}
 
@@ -2092,7 +2117,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		m_uart0_txd_state = 1;
 		m_txd0_handler(1);
 		m_uart0_tx_bit++;
-		m_uart0_tx_timer->adjust(uart0_bit_period());
+		m_uart0_tx_timer->adjust(uart0_bit_period() + clocks_to_attotime(m_uart0_stop_edge_lead_ticks));
 		return;
 	}
 
@@ -2250,12 +2275,16 @@ TIMER_CALLBACK_MEMBER(v55_device::uart1_rx_tick)
 	m_uart1_rx_active = false;
 	if (m_rxd1)
 	{
+		++m_uart1_rx_bytes;
+		if (m_uart1_rx_full)
+			++m_uart1_rx_overruns;
 		m_sfr[0x17e] = m_uart1_rx_byte;
 		m_uart1_rx_full = true;
 		request_internal_serial_irq(SERIAL_IRQ_INTSR1);
 	}
 	else
 	{
+		++m_uart1_rx_framing_errors;
 		m_sfr[0x17c] |= 0x02;
 		request_internal_serial_irq(SERIAL_IRQ_INTSER1);
 	}
