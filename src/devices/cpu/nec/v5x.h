@@ -384,6 +384,7 @@ public:
 	u8 debug_uart0_mode() const { return m_sfr[0x173]; }
 	u8 debug_uart0_status() const { return m_sfr[0x174]; }
 	u8 debug_uart0_data() const { return m_sfr[0x175]; }
+	u8 debug_uart0_tx_byte() const { return m_uart0_tx_byte; }
 	bool debug_uart0_tx_active() const { return m_uart0_tx_active; }
 	bool debug_uart0_tx_loaded() const { return m_uart0_tx_loaded; }
 	bool debug_uart0_rx_full() const { return m_uart0_rx_full; }
