@@ -294,6 +294,8 @@ private:
 	void drain_host_panel();
 	void drain_host_adin();
 	void push_host_lcd();
+	void machine_stop();
+	void log_control_health_snapshot();
 	void render_lcd_snapshot(char *line1, char *line2) const;
 	void poll_host_scanq_inputs(address_space &space);
 	u8 read_matrix_row(u8 row);
@@ -543,6 +545,7 @@ private:
 	u32 m_midi_rxd1_edges = 0;
 	u32 m_h8_txd_edges = 0;
 	bool m_log_control_health = false;
+	bool m_log_control_health_final = false;
 	bool m_trace_h8_control_events = false;
 	double m_trace_h8_control_start = 0.0;
 	double m_trace_h8_control_end = 1.0e9;
@@ -551,6 +554,9 @@ private:
 	u64 m_h8_irq1_start_pulses = 0;
 	u64 m_h8_irq1_frame_checks = 0;
 	u64 m_h8_irq1_frame_wakes = 0;
+	std::array<u64, 2> m_h8_cmd_ptr_writes{};
+	std::array<u32, 2> m_h8_cmd_ptr_last_pc{};
+	std::array<double, 2> m_h8_cmd_ptr_last_time{};
 	std::deque<u8> m_gui_midi_rx_queue;
 	bool m_gui_midi_rx_active = false;
 	u16 m_gui_midi_rx_frame = 0x03ff;
@@ -631,6 +637,10 @@ void korgprophecy_state::machine_start()
 {
 	if (const char *e = std::getenv("KPROP_LOG_CONTROL_HEALTH"))
 		m_log_control_health = std::strcmp(e, "0") != 0;
+	if (const char *e = std::getenv("KPROP_LOG_CONTROL_HEALTH_FINAL"))
+		m_log_control_health_final = std::strcmp(e, "0") != 0;
+	machine().add_notifier(MACHINE_NOTIFY_EXIT,
+		machine_notify_delegate(&korgprophecy_state::machine_stop, this));
 	if (const char *e = std::getenv("KPROP_TRACE_H8_CONTROL_EVENTS"))
 		m_trace_h8_control_events = std::strcmp(e, "0") != 0;
 	if (const char *e = std::getenv("KPROP_TRACE_H8_CONTROL_START"))
@@ -825,6 +835,9 @@ void korgprophecy_state::machine_start()
 	save_item(NAME(m_h8_irq1_start_pulses));
 	save_item(NAME(m_h8_irq1_frame_checks));
 	save_item(NAME(m_h8_irq1_frame_wakes));
+	save_item(NAME(m_h8_cmd_ptr_writes));
+	save_item(NAME(m_h8_cmd_ptr_last_pc));
+	save_item(NAME(m_h8_cmd_ptr_last_time));
 	save_item(NAME(m_v55_txd1_decode_active));
 	save_item(NAME(m_v55_txd1_decode_byte));
 	save_item(NAME(m_v55_txd1_decode_bit));
@@ -1072,7 +1085,7 @@ void korgprophecy_state::machine_start()
 	m_h8_dsp_filter_source_write_tap.remove();
 	m_h8_source_state_write_tap.remove();
 
-	if (m_trace_h8_control_events)
+	if (m_trace_h8_control_events || m_log_control_health_final)
 	{
 		address_space &h8 = m_subcpu->space(AS_PROGRAM);
 		auto in_window = [this]()
@@ -1084,10 +1097,24 @@ void korgprophecy_state::machine_start()
 			0x048280, 0x0482af, "kprop_h8_control_ram_w",
 			[this, in_window](offs_t offset, u16 &data, u16 mem_mask)
 			{
-				if (in_window())
+				for (unsigned pointer = 0; pointer < 2; ++pointer)
+				{
+					const offs_t base = 0x048294 + pointer * 4;
+					if (offset >= base && offset < base + 4)
+					{
+						++m_h8_cmd_ptr_writes[pointer];
+						m_h8_cmd_ptr_last_pc[pointer] = u32(m_subcpu->pc());
+						m_h8_cmd_ptr_last_time[pointer] = machine().time().as_double();
+					}
+				}
+				if (m_trace_h8_control_events && in_window())
 					logerror("KPROP_H8CTL,T=%.9f,EV=RAMW,PC=%06X,A=%06X,D=%04X,M=%04X\n",
 						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
 			});
+		// Final-health mode needs only the silent pointer writer tap above.
+		// Avoid installing the verbose read/SCI trace taps in normal stress runs.
+		if (!m_trace_h8_control_events)
+			return;
 		m_h8_rxfsm_read_tap = h8.install_read_tap(
 			0x048280, 0x0482af, "kprop_h8_control_ram_r",
 			[this, in_window](offs_t offset, u16 &data, u16 mem_mask)
@@ -1100,7 +1127,7 @@ void korgprophecy_state::machine_start()
 			0x0fffb0, 0x0fffb5, "kprop_h8_sci0_r",
 			[this, in_window](offs_t offset, u16 &data, u16 mem_mask)
 			{
-				if (in_window())
+				if (m_trace_h8_control_events && in_window())
 					logerror("KPROP_H8CTL,T=%.9f,EV=SCIR,PC=%06X,A=%06X,D=%04X,M=%04X\n",
 						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
 			});
@@ -1108,10 +1135,73 @@ void korgprophecy_state::machine_start()
 			0x0fffb0, 0x0fffb5, "kprop_h8_sci0_w",
 			[this, in_window](offs_t offset, u16 &data, u16 mem_mask)
 			{
-				if (in_window())
+				if (m_trace_h8_control_events && in_window())
 					logerror("KPROP_H8CTL,T=%.9f,EV=SCIW,PC=%06X,A=%06X,D=%04X,M=%04X\n",
 						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
 			});
+	}
+}
+
+void korgprophecy_state::machine_stop()
+{
+	if (m_log_control_health_final)
+	{
+		auto const suppressor = machine().disable_side_effects();
+		address_space &v55 = m_maincpu->space(AS_PROGRAM);
+		address_space &h8 = m_subcpu->space(AS_PROGRAM);
+		const u16 h8_cmd_w = h8.read_dword(0x048294) & 0x03ff;
+		const u16 h8_cmd_r = h8.read_dword(0x048298) & 0x03ff;
+		std::fprintf(stderr,
+			"KPROP_FINAL_HEALTH,T=%.6f,VPC=%06X,HPC=%06X,"
+			"MB=%04X/%04X/%04X,CTRL=%04X/%04X,A716=%02X,A721=%02X,"
+			"H8CMD=%03X/%03X/%03X,SCI=%02X/%02X/%02X/%02X/%02X/%02X,"
+			"H8I=%02X/%02X/%02X,"
+			"H8P=%llu/%06X/%.6f/%llu/%06X/%.6f,"
+			"H8E=%llu/%02X/%06X/%.6f/%llu/%llu/%llu,"
+			"IRQ=%llu/%llu/%llu/%llu,TXD=%u/%u,"
+			"U1=%llu/%llu/%llu/%llu/%02X/%02X,"
+			"U0=%02X/%02X/%02X/%u/%u/%u/%u,IRQS=%02X/%02X,IC=%02X/%02X/%02X/%02X\n",
+			machine().time().as_double(), u32(m_maincpu->pc()), u32(m_subcpu->pc()),
+			v55.read_word(MB_PHYS_A70A), v55.read_word(MB_PHYS_A70C),
+			v55.read_word(MB_PHYS_A70E), v55.read_word(MB_PHYS_A710),
+			v55.read_word(MB_PHYS_A712), v55.read_byte(MB_PHYS_A716),
+			v55.read_byte(MB_PHYS_A721), h8_cmd_w, h8_cmd_r,
+			(h8_cmd_w - h8_cmd_r) & 0x03ff,
+			h8.read_byte(0x0fffb0), h8.read_byte(0x0fffb1),
+			h8.read_byte(0x0fffb2), h8.read_byte(0x0fffb3),
+			h8.read_byte(0x0fffb4), h8.read_byte(0x0fffb5),
+			h8.read_byte(0x0ffff4), h8.read_byte(0x0ffff5),
+			h8.read_byte(0x0ffff6),
+			(unsigned long long)m_h8_cmd_ptr_writes[0], m_h8_cmd_ptr_last_pc[0],
+			m_h8_cmd_ptr_last_time[0],
+			(unsigned long long)m_h8_cmd_ptr_writes[1], m_h8_cmd_ptr_last_pc[1],
+			m_h8_cmd_ptr_last_time[1],
+			(unsigned long long)m_subcpu->debug_sci_rx_error_count<0>(),
+			m_subcpu->debug_sci_last_rx_error<0>(),
+			m_subcpu->debug_sci_last_rx_error_pc<0>(),
+			m_subcpu->debug_sci_last_rx_error_time<0>(),
+			(unsigned long long)m_subcpu->debug_sci_rx_overruns<0>(),
+			(unsigned long long)m_subcpu->debug_sci_rx_framing_errors<0>(),
+			(unsigned long long)m_subcpu->debug_sci_rx_parity_errors<0>(),
+			(unsigned long long)m_h8_irq1_pulses,
+			(unsigned long long)m_h8_irq1_start_pulses,
+			(unsigned long long)m_h8_irq1_frame_checks,
+			(unsigned long long)m_h8_irq1_frame_wakes,
+			m_v55_txd_edges, unsigned(m_v55_txd_state),
+			(unsigned long long)m_maincpu->debug_uart1_rx_bytes(),
+			(unsigned long long)m_maincpu->debug_uart1_rx_consumed(),
+			(unsigned long long)m_maincpu->debug_uart1_rx_overruns(),
+			(unsigned long long)m_maincpu->debug_uart1_rx_framing_errors(),
+			m_maincpu->debug_uart1_status(), m_maincpu->debug_uart1_data(),
+			m_maincpu->debug_uart0_mode(), m_maincpu->debug_uart0_status(),
+			m_maincpu->debug_uart0_data(), m_maincpu->debug_uart0_tx_active(),
+			m_maincpu->debug_uart0_tx_loaded(), m_maincpu->debug_uart0_rx_full(),
+			m_maincpu->debug_uart0_cts(), m_maincpu->debug_serial_irq_pending(),
+			m_maincpu->debug_serial_irq_in_service(),
+			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTSR0),
+			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTST0),
+			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTSR1),
+			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTST1));
 	}
 }
 
@@ -1133,6 +1223,9 @@ void korgprophecy_state::machine_reset()
 	m_h8_irq1_start_pulses = 0;
 	m_h8_irq1_frame_checks = 0;
 	m_h8_irq1_frame_wakes = 0;
+	m_h8_cmd_ptr_writes.fill(0);
+	m_h8_cmd_ptr_last_pc.fill(0);
+	m_h8_cmd_ptr_last_time.fill(0.0);
 	m_v55_h8_tx_active = false;
 	m_last_h8_tx_wptr = 0xffffffffU;
 	m_h8_txd_decode_active = false;
@@ -2794,6 +2887,60 @@ void korgprophecy_state::push_host_lcd()
 		g_kprop_host_lcd_raw(raw1.data(), raw2.data(), m_lcd_cgram.data());
 }
 
+void korgprophecy_state::log_control_health_snapshot()
+{
+	const double now = machine().time().as_double();
+	auto const suppressor = machine().disable_side_effects();
+	address_space &v55 = m_maincpu->space(AS_PROGRAM);
+	address_space &h8 = m_subcpu->space(AS_PROGRAM);
+	const u16 pending_w = v55.read_word(V55_PENDING_PARAM_WPTR) & 0x001f;
+	const u16 pending_r = v55.read_word(V55_PENDING_PARAM_RPTR) & 0x001f;
+	const u8 pending_head = v55.read_byte(V55_PENDING_PARAM_BASE + pending_r);
+	const u16 h8_cmd_w = h8.read_dword(0x048294) & 0x03ff;
+	const u16 h8_cmd_r = h8.read_dword(0x048298) & 0x03ff;
+	logerror(
+		"KPROP_CONTROL_HEALTH,T=%.6f,VPC=%06X,HPC=%06X,"
+		"MB=%04X/%04X/%04X,CTRL=%04X/%04X,A716=%02X,A721=%02X,"
+		"PEND=%02X/%02X/%02X,H8CMD=%03X/%03X/%03X,"
+		"SCI=%02X/%02X/%02X/%02X/%02X/%02X,"
+		"IRQ=%llu/%llu/%llu/%llu,TXD=%u/%u,GUI=%zu/%llu/%llu,H8TXW=%02X,"
+		"U1=%llu/%llu/%llu/%llu/%02X/%02X/%02X/%02X,"
+		"U0=%02X/%02X/%02X/%u/%u/%u/%u,IC=%02X/%02X/%02X/%02X\n",
+		now, u32(m_maincpu->pc()), u32(m_subcpu->pc()),
+		v55.read_word(MB_PHYS_A70A), v55.read_word(MB_PHYS_A70C),
+		v55.read_word(MB_PHYS_A70E), v55.read_word(MB_PHYS_A710),
+		v55.read_word(MB_PHYS_A712), v55.read_byte(MB_PHYS_A716),
+		v55.read_byte(MB_PHYS_A721), pending_w, pending_r, pending_head,
+		h8_cmd_w, h8_cmd_r, (h8_cmd_w - h8_cmd_r) & 0x03ff,
+		h8.read_byte(0x0fffb0), h8.read_byte(0x0fffb1),
+		h8.read_byte(0x0fffb2), h8.read_byte(0x0fffb3),
+		h8.read_byte(0x0fffb4), h8.read_byte(0x0fffb5),
+		(unsigned long long)m_h8_irq1_pulses,
+		(unsigned long long)m_h8_irq1_start_pulses,
+		(unsigned long long)m_h8_irq1_frame_checks,
+		(unsigned long long)m_h8_irq1_frame_wakes,
+		m_v55_txd_edges, unsigned(m_v55_txd_state),
+		m_gui_midi_rx_queue.size(),
+		(unsigned long long)m_gui_midi_rx_sent,
+		(unsigned long long)m_gui_midi_rx_enqueued,
+		unsigned(m_last_h8_tx_wptr & 0xff),
+		(unsigned long long)m_maincpu->debug_uart1_rx_bytes(),
+		(unsigned long long)m_maincpu->debug_uart1_rx_consumed(),
+		(unsigned long long)m_maincpu->debug_uart1_rx_overruns(),
+		(unsigned long long)m_maincpu->debug_uart1_rx_framing_errors(),
+		m_maincpu->debug_uart1_status(), m_maincpu->debug_uart1_data(),
+		m_maincpu->debug_serial_irq_pending(),
+		m_maincpu->debug_serial_irq_in_service(),
+		m_maincpu->debug_uart0_mode(), m_maincpu->debug_uart0_status(),
+		m_maincpu->debug_uart0_data(), m_maincpu->debug_uart0_tx_active(),
+		m_maincpu->debug_uart0_tx_loaded(), m_maincpu->debug_uart0_rx_full(),
+		m_maincpu->debug_uart0_cts(),
+		m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTSR0),
+		m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTST0),
+		m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTSR1),
+		m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTST1));
+}
+
 TIMER_CALLBACK_MEMBER(korgprophecy_state::host_service_tick)
 {
 	drain_host_midi();
@@ -2808,38 +2955,7 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::host_service_tick)
 		if (slot != m_control_health_log_slot)
 		{
 			m_control_health_log_slot = slot;
-			auto const suppressor = machine().disable_side_effects();
-			address_space &v55 = m_maincpu->space(AS_PROGRAM);
-			address_space &h8 = m_subcpu->space(AS_PROGRAM);
-			const u16 pending_w = v55.read_word(V55_PENDING_PARAM_WPTR) & 0x001f;
-			const u16 pending_r = v55.read_word(V55_PENDING_PARAM_RPTR) & 0x001f;
-			const u8 pending_head = v55.read_byte(V55_PENDING_PARAM_BASE + pending_r);
-			const u16 h8_cmd_w = h8.read_dword(0x048294) & 0x03ff;
-			const u16 h8_cmd_r = h8.read_dword(0x048298) & 0x03ff;
-			logerror(
-				"KPROP_CONTROL_HEALTH,T=%.6f,VPC=%06X,HPC=%06X,"
-				"MB=%04X/%04X/%04X,CTRL=%04X/%04X,A716=%02X,A721=%02X,"
-				"PEND=%02X/%02X/%02X,H8CMD=%03X/%03X/%03X,"
-				"SCI=%02X/%02X/%02X/%02X/%02X/%02X,"
-				"IRQ=%llu/%llu/%llu/%llu,TXD=%u/%u,GUI=%zu/%llu/%llu,H8TXW=%02X\n",
-				now, u32(m_maincpu->pc()), u32(m_subcpu->pc()),
-				v55.read_word(MB_PHYS_A70A), v55.read_word(MB_PHYS_A70C),
-				v55.read_word(MB_PHYS_A70E), v55.read_word(MB_PHYS_A710),
-				v55.read_word(MB_PHYS_A712), v55.read_byte(MB_PHYS_A716),
-				v55.read_byte(MB_PHYS_A721), pending_w, pending_r, pending_head,
-				h8_cmd_w, h8_cmd_r, (h8_cmd_w - h8_cmd_r) & 0x03ff,
-				h8.read_byte(0x0fffb0), h8.read_byte(0x0fffb1),
-				h8.read_byte(0x0fffb2), h8.read_byte(0x0fffb3),
-				h8.read_byte(0x0fffb4), h8.read_byte(0x0fffb5),
-				(unsigned long long)m_h8_irq1_pulses,
-				(unsigned long long)m_h8_irq1_start_pulses,
-				(unsigned long long)m_h8_irq1_frame_checks,
-				(unsigned long long)m_h8_irq1_frame_wakes,
-				m_v55_txd_edges, unsigned(m_v55_txd_state),
-				m_gui_midi_rx_queue.size(),
-				(unsigned long long)m_gui_midi_rx_sent,
-				(unsigned long long)m_gui_midi_rx_enqueued,
-				unsigned(m_last_h8_tx_wptr & 0xff));
+			log_control_health_snapshot();
 		}
 	}
 }

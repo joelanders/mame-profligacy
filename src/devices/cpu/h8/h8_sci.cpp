@@ -80,7 +80,9 @@ h8_sci_device::h8_sci_device(const machine_config &mconfig, const char *tag, dev
 	m_external_to_internal_ratio(0), m_internal_to_external_ratio(0), m_sync_timer(nullptr), m_id(0), m_eri_int(0), m_rxi_int(0), m_txi_int(0), m_tei_int(0),
 	m_tx_state(0), m_rx_state(0), m_tx_bit(0), m_rx_bit(0), m_clock_state(0), m_tx_parity(0), m_rx_parity(0), m_tx_clock_counter(0), m_rx_clock_counter(0),
 	m_clock_mode(INTERNAL_ASYNC), m_ext_clock_value(false), m_rx_value(true),
-	m_rdr(0), m_tdr(0), m_smr(0), m_scr(0), m_ssr(0), m_ssr_read(0), m_brr(0), m_rsr(0), m_tsr(0), m_clock_event(0), m_divider(0)
+	m_rdr(0), m_tdr(0), m_smr(0), m_scr(0), m_ssr(0), m_ssr_read(0), m_brr(0), m_rsr(0), m_tsr(0), m_clock_event(0), m_divider(0),
+	m_rx_error_count(0), m_rx_error_types{}, m_last_rx_error(0),
+	m_last_rx_error_pc(0), m_last_rx_error_time(0.0)
 {
 	m_external_clock_period = attotime::never;
 }
@@ -339,6 +341,11 @@ void h8_sci_device::device_start()
 	save_item(NAME(m_clock_event));
 	save_item(NAME(m_clock_step));
 	save_item(NAME(m_divider));
+	save_item(NAME(m_rx_error_count));
+	save_item(NAME(m_rx_error_types));
+	save_item(NAME(m_last_rx_error));
+	save_item(NAME(m_last_rx_error_pc));
+	save_item(NAME(m_last_rx_error_time));
 }
 
 void h8_sci_device::device_reset()
@@ -362,6 +369,11 @@ void h8_sci_device::device_reset()
 	m_ext_clock_value = true;
 	m_tx_clock_counter = 0;
 	m_rx_clock_counter = 0;
+	m_rx_error_count = 0;
+	m_rx_error_types.fill(0);
+	m_last_rx_error = 0;
+	m_last_rx_error_pc = 0;
+	m_last_rx_error_time = 0.0;
 	m_cpu->do_sci_clk(m_id, 1);
 	m_cpu->do_sci_tx(m_id, 1);
 }
@@ -674,14 +686,27 @@ void h8_sci_device::rx_start()
 	clock_start(CLK_RX);
 }
 
+void h8_sci_device::record_rx_error(u8 flag)
+{
+	++m_rx_error_count;
+	if (flag == SSR_ORER) ++m_rx_error_types[0];
+	if (flag == SSR_FER) ++m_rx_error_types[1];
+	if (flag == SSR_PER) ++m_rx_error_types[2];
+	m_last_rx_error = flag;
+	m_last_rx_error_pc = u32(m_cpu->pc());
+	m_last_rx_error_time = machine().time().as_double();
+}
+
 void h8_sci_device::rx_done()
 {
 	if(!(m_ssr & SSR_FER)) {
 		if((m_smr & SMR_PE) && m_rx_parity) {
 			m_ssr |= SSR_PER;
+			record_rx_error(SSR_PER);
 			LOGMASKED(LOG_DATA, "Receive parity error\n");
 		} else if(m_ssr & SSR_RDRF) {
 			m_ssr |= SSR_ORER;
+			record_rx_error(SSR_ORER);
 			LOGMASKED(LOG_DATA, "Receive overrun\n");
 		} else {
 			m_ssr |= SSR_RDRF;
@@ -752,7 +777,10 @@ void h8_sci_device::rx_async_step()
 	case ST_STOP:
 		assert(m_rx_bit == 1);
 		if(!m_rx_value)
+		{
 			m_ssr |= SSR_FER;
+			record_rx_error(SSR_FER);
+		}
 		else if((m_smr & SMR_PE) && m_rx_parity)
 			m_ssr |= SSR_PER;
 		rx_done();
