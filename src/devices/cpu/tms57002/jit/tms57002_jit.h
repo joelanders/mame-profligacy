@@ -123,7 +123,8 @@ private:
 	PcFn get_pc_fn(tms57002_device &dsp, int ipc);   // cache lookup / compile
 	PcFn compile_pc(tms57002_device &dsp, int ipc);  // emit one PC's chain
 	FrameFn compile_frame(tms57002_device &dsp, int max_steps, int start_pc);  // emit the whole frame
-	FrameFn compile_frame_pooled(tms57002_device &dsp, int max_steps, int start_pc);  // M2 pooled+pinned frame
+	FrameFn compile_frame_pooled(tms57002_device &dsp, int max_steps, int start_pc,
+		bool cmem_per_op);  // M2 pooled+pinned frame; optional CMEM-drain variant
 	void build_pooled_order(tms57002_device &dsp, int start_pc, int max_steps);  // M3: program-order (pc,ipc) list
 	FrameFn compile_frame_callfree(tms57002_device &dsp, int max_steps, int start_pc);  // call-free nop frame (validation)
 
@@ -147,6 +148,7 @@ private:
 	// version (re-hash only when it changes). m_pooled_order stays the scratch for the current build/compile.
 	struct PooledEntry {
 		FrameFn fn = nullptr;
+		FrameFn cmem_fn = nullptr;               // exact guarded variant, selected only while CLOAD is pending
 		std::vector<std::pair<int, int>> order;   // this program's (pc,ipc) list (for re-prime + pooled_order())
 		int max_steps = -1, start_pc = -1;
 		u32 start_st1 = ~0u;
