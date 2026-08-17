@@ -263,7 +263,7 @@ private:
 	static constexpr u8 MAX_SCRIPT_PULSES = 64;
 	static constexpr u8 MAX_HOST_PANEL_PULSES = 32;
 	static constexpr u32 CONTROL_FLIGHT_CAPACITY = 4096;
-	static constexpr u32 CONTROL_FLIGHT_DUMP_LIMIT = 1024;
+	static constexpr u32 CONTROL_FLIGHT_DUMP_LIMIT = 4096;
 
 	enum class control_flight_type : u8
 	{
@@ -273,6 +273,8 @@ private:
 		H8_TO_V55_BAD_STOP,
 		MIDI_TO_V55,
 		H8_POINTER_WRITE,
+		H8_RTOS_WRITE,
+		H8_RX_MISMATCH,
 		H8_SCI_ERROR,
 		STALL
 	};
@@ -304,6 +306,13 @@ private:
 		u32 h8_error_count = 0;
 		u32 h8_error_pc = 0;
 		double h8_error_time = 0.0;
+		u32 h8_current = 0;
+		u32 h8_sem1_head = 0;
+		u32 h8_tcb0_next = 0;
+		u8 h8_sem1_count = 0;
+		u16 h8_parser_remaining = 0;
+		u8 h8_parser_state = 0;
+		u8 h8_rx_expected = 0;
 	};
 
 	struct host_panel_pulse
@@ -393,10 +402,12 @@ private:
 	void start_v55_h8_tx(u8 data);
 	void poll_h8_tx_ring();
 	void v55_txd_w(int state);
+	TIMER_CALLBACK_MEMBER(v55_txd_sync);
 	void v55_txd1_w(int state);
 	void handle_midi_tx_byte(u8 data);
 	void midi_rxd1_w(int state);
 	void h8_txd0_w(int state);
+	TIMER_CALLBACK_MEMBER(h8_txd_sync);
 	void pulse_h8_irq1(const char *reason);
 	void update_h8_cts_from_port8();
 	u8 h8_sram_r8(offs_t offset);
@@ -582,7 +593,6 @@ private:
 	u8 m_h8_port8 = 0xff;
 	u8 m_h8_cts_state = 0;
 	u8 m_v55_txd_state = 1;
-	attotime m_v55_txd_byte_end = attotime::zero;
 	u8 m_v55_txd1_state = 1;
 	u8 m_midi_rxd1_state = 1;
 	u8 m_h8_txd_state = 1;
@@ -590,6 +600,7 @@ private:
 	u32 m_v55_txd1_edges = 0;
 	u32 m_midi_rxd1_edges = 0;
 	u32 m_h8_txd_edges = 0;
+	bool m_sync_board_uart_edges = true;
 	bool m_log_control_health = false;
 	bool m_log_control_health_final = false;
 	bool m_control_flight_enabled = false;
@@ -615,6 +626,14 @@ private:
 	u64 m_h8_irq1_start_pulses = 0;
 	u64 m_h8_irq1_frame_checks = 0;
 	u64 m_h8_irq1_frame_wakes = 0;
+	std::deque<u8> m_v55_h8_expected_rx;
+	bool m_v55_h8_rx_tracking_started = false;
+	u64 m_v55_h8_rx_compared = 0;
+	u64 m_v55_h8_rx_mismatches = 0;
+	u64 m_v55_h8_rx_unexpected = 0;
+	u8 m_v55_h8_rx_last_expected = 0;
+	u8 m_v55_h8_rx_last_actual = 0;
+	double m_v55_h8_rx_last_mismatch_time = 0.0;
 	std::array<u64, 2> m_h8_cmd_ptr_writes{};
 	std::array<u32, 2> m_h8_cmd_ptr_last_pc{};
 	std::array<double, 2> m_h8_cmd_ptr_last_time{};
@@ -645,6 +664,7 @@ private:
 	u8 m_last_card_p0_status = 0xff;
 	memory_passthrough_handler m_v55_status_tap;
 	memory_passthrough_handler m_h8_cmdq_tap;
+	memory_passthrough_handler m_h8_rtos_count_tap;
 	memory_passthrough_handler m_h8_rxfsm_read_tap;
 	memory_passthrough_handler m_h8_rxfsm_write_tap;
 	memory_passthrough_handler m_h8_sci_read_tap;
@@ -702,6 +722,8 @@ void korgprophecy_state::machine_start()
 		m_log_control_health_final = std::strcmp(e, "0") != 0;
 	if (const char *e = std::getenv("KPROP_CONTROL_FLIGHT_RECORDER"))
 		m_control_flight_enabled = std::strcmp(e, "0") != 0;
+	if (const char *e = std::getenv("KPROP_SYNC_BOARD_UART_EDGES"))
+		m_sync_board_uart_edges = std::strcmp(e, "0") != 0;
 	machine().add_notifier(MACHINE_NOTIFY_EXIT,
 		machine_notify_delegate(&korgprophecy_state::machine_stop, this));
 	if (const char *e = std::getenv("KPROP_TRACE_H8_CONTROL_EVENTS"))
@@ -1137,6 +1159,7 @@ void korgprophecy_state::machine_start()
 
 	m_v55_status_tap.remove();
 	m_h8_cmdq_tap.remove();
+	m_h8_rtos_count_tap.remove();
 	m_h8_rxfsm_read_tap.remove();
 	m_h8_rxfsm_write_tap.remove();
 	m_h8_sci_read_tap.remove();
@@ -1150,6 +1173,7 @@ void korgprophecy_state::machine_start()
 
 	if (m_trace_h8_control_events || m_log_control_health_final || m_control_flight_enabled)
 	{
+		m_subcpu->debug_enable_sci_rx_capture<0>(true);
 		address_space &h8 = m_subcpu->space(AS_PROGRAM);
 		auto in_window = [this]()
 		{
@@ -1175,8 +1199,66 @@ void korgprophecy_state::machine_start()
 					logerror("KPROP_H8CTL,T=%.9f,EV=RAMW,PC=%06X,A=%06X,D=%04X,M=%04X\n",
 						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
 			});
+		m_h8_rtos_count_tap = h8.install_write_tap(
+			0x0483c8, 0x0483c9, "kprop_h8_rtos_sem1_count_w",
+			[this](offs_t offset, u16 &data, u16 mem_mask)
+			{
+				const u8 value = ACCESSING_BITS_8_15 ? u8(data >> 8) : u8(data);
+				control_flight_record(control_flight_type::H8_RTOS_WRITE, value);
+			});
+		m_h8_sci_read_tap = h8.install_read_tap(
+			0x0fffb0, 0x0fffb5, "kprop_h8_sci0_r",
+			[this, in_window](offs_t offset, u16 &data, u16 mem_mask)
+			{
+				// The SCI0 RX handler reads RDR as the low byte at 0x01af02.
+				// Compare the byte firmware consumes with the byte the native V55
+				// UART launched.  Silent one-bit sampling shifts do not necessarily
+				// set FER, PER, or ORER, but they corrupt the command parser.
+				if (!machine().side_effects_disabled() &&
+					u32(m_subcpu->pc()) == 0x01af02 && ACCESSING_BITS_0_7)
+				{
+					const u8 actual = u8(data);
+					if (m_v55_h8_expected_rx.empty())
+					{
+						if (m_v55_h8_rx_tracking_started)
+							++m_v55_h8_rx_unexpected;
+					}
+					else
+					{
+						const u8 expected = m_v55_h8_expected_rx.front();
+						m_v55_h8_expected_rx.pop_front();
+						++m_v55_h8_rx_compared;
+						if (actual != expected)
+						{
+							m_v55_h8_rx_last_expected = expected;
+							m_v55_h8_rx_last_actual = actual;
+							++m_v55_h8_rx_mismatches;
+							m_v55_h8_rx_last_mismatch_time = machine().time().as_double();
+							std::fprintf(stderr,
+								"KPROP_H8_RX_MISMATCH,T=%.9f,EXP=%02X,ACT=%02X,START=%.9f,SAMPLES=",
+								m_v55_h8_rx_last_mismatch_time, expected, actual,
+								m_subcpu->debug_sci_rx_start_time<0>());
+							for (u8 i = 0; i < m_subcpu->debug_sci_rx_sample_count<0>(); ++i)
+							{
+								if (i)
+									std::fprintf(stderr, "/");
+								std::fprintf(stderr, "%.9f:%u:%u",
+									m_subcpu->debug_sci_rx_sample_time<0>(i),
+									m_subcpu->debug_sci_rx_sample_state<0>(i),
+									m_subcpu->debug_sci_rx_sample_value<0>(i));
+							}
+							std::fprintf(stderr, "\n");
+							control_flight_record(control_flight_type::H8_RX_MISMATCH, actual);
+						}
+					}
+				}
+				if (m_trace_h8_control_events && in_window())
+					logerror("KPROP_H8CTL,T=%.9f,EV=SCIR,PC=%06X,A=%06X,D=%04X,M=%04X\n",
+						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
+			});
 		// Final-health mode needs only the silent pointer writer tap above.
-		// Avoid installing the verbose read/SCI trace taps in normal stress runs.
+		// The SCI read tap above is also a silent byte-integrity oracle. Avoid
+		// installing the remaining verbose read/write taps in normal stress runs.
 		if (!m_trace_h8_control_events)
 			return;
 		m_h8_rxfsm_read_tap = h8.install_read_tap(
@@ -1185,14 +1267,6 @@ void korgprophecy_state::machine_start()
 			{
 				if (in_window())
 					logerror("KPROP_H8CTL,T=%.9f,EV=RAMR,PC=%06X,A=%06X,D=%04X,M=%04X\n",
-						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
-			});
-		m_h8_sci_read_tap = h8.install_read_tap(
-			0x0fffb0, 0x0fffb5, "kprop_h8_sci0_r",
-			[this, in_window](offs_t offset, u16 &data, u16 mem_mask)
-			{
-				if (m_trace_h8_control_events && in_window())
-					logerror("KPROP_H8CTL,T=%.9f,EV=SCIR,PC=%06X,A=%06X,D=%04X,M=%04X\n",
 						machine().time().as_double(), u32(m_subcpu->pc()), u32(offset), data, mem_mask);
 			});
 		m_h8_sci_write_tap = h8.install_write_tap(
@@ -1223,6 +1297,7 @@ void korgprophecy_state::machine_stop()
 			"H8I=%02X/%02X/%02X,"
 			"H8P=%llu/%06X/%.6f/%llu/%06X/%.6f,"
 			"H8E=%llu/%02X/%06X/%.6f/%llu/%llu/%llu,"
+			"WIRE=%llu/%llu/%llu/%zu/%02X/%02X/%.6f,"
 			"IRQ=%llu/%llu/%llu/%llu,TXD=%u/%u,"
 			"U1=%llu/%llu/%llu/%llu/%02X/%02X,"
 			"U0=%02X/%02X/%02X/%u/%u/%u/%u,IRQS=%02X/%02X,IC=%02X/%02X/%02X/%02X\n",
@@ -1248,6 +1323,11 @@ void korgprophecy_state::machine_stop()
 			(unsigned long long)m_subcpu->debug_sci_rx_overruns<0>(),
 			(unsigned long long)m_subcpu->debug_sci_rx_framing_errors<0>(),
 			(unsigned long long)m_subcpu->debug_sci_rx_parity_errors<0>(),
+			(unsigned long long)m_v55_h8_rx_compared,
+			(unsigned long long)m_v55_h8_rx_mismatches,
+			(unsigned long long)m_v55_h8_rx_unexpected,
+			m_v55_h8_expected_rx.size(), m_v55_h8_rx_last_expected,
+			m_v55_h8_rx_last_actual, m_v55_h8_rx_last_mismatch_time,
 			(unsigned long long)m_h8_irq1_pulses,
 			(unsigned long long)m_h8_irq1_start_pulses,
 			(unsigned long long)m_h8_irq1_frame_checks,
@@ -1289,6 +1369,32 @@ void korgprophecy_state::machine_stop()
 		for (u16 i = 0; i < 16; ++i)
 			std::fprintf(stderr, "%02X", v55.read_byte(MBQ_PHYS_CTRL_BASE + ((ctrl_r + i) & 0x03ff)));
 		std::fprintf(stderr, "\n");
+
+		// Firmware semaphore 1 gates the board-command task.  If complete commands
+		// remain queued, capture the RTOS lists and saved task contexts so a missed
+		// semaphore wake can be distinguished from a parser or UART failure.
+		std::fprintf(stderr, "KPROP_FINAL_RTOS,CURRENT=%06X,SEM1=%06X/%06X,READY=",
+			h8.read_dword(0x0408a4), h8.read_dword(0x0408b0), h8.read_dword(0x0408b4));
+		for (u32 i = 0; i < 8; ++i)
+		{
+			if (i)
+				std::fprintf(stderr, "/");
+			std::fprintf(stderr, "%06X", h8.read_dword(0x040864 + i * 8));
+		}
+		std::fprintf(stderr, ",TCB=");
+		for (u32 i = 0; i < 8; ++i)
+		{
+			const offs_t tcb = 0x040804 + i * 12;
+			const u32 sp = h8.read_dword(tcb + 8);
+			if (i)
+				std::fprintf(stderr, "/");
+			std::fprintf(stderr, "%u:%06X:%06X:%06X:", i,
+				h8.read_dword(tcb), h8.read_dword(tcb + 4), sp);
+			if (sp >= 0x040000 && sp <= 0x0ffff0)
+				for (u32 j = 0; j < 36; ++j)
+					std::fprintf(stderr, "%02X", h8.read_byte(sp + j));
+		}
+		std::fprintf(stderr, "\n");
 	}
 }
 
@@ -1299,7 +1405,6 @@ void korgprophecy_state::machine_reset()
 	m_h8_port8 = 0xff;
 	m_h8_cts_state = 0;
 	m_v55_txd_state = 1;
-	m_v55_txd_byte_end = attotime::zero;
 	m_v55_txd1_state = 1;
 	m_h8_txd_state = 1;
 	m_v55_txd_edges = 0;
@@ -1323,6 +1428,14 @@ void korgprophecy_state::machine_reset()
 	m_h8_irq1_start_pulses = 0;
 	m_h8_irq1_frame_checks = 0;
 	m_h8_irq1_frame_wakes = 0;
+	m_v55_h8_expected_rx.clear();
+	m_v55_h8_rx_tracking_started = false;
+	m_v55_h8_rx_compared = 0;
+	m_v55_h8_rx_mismatches = 0;
+	m_v55_h8_rx_unexpected = 0;
+	m_v55_h8_rx_last_expected = 0;
+	m_v55_h8_rx_last_actual = 0;
+	m_v55_h8_rx_last_mismatch_time = 0.0;
 	m_h8_cmd_ptr_writes.fill(0);
 	m_h8_cmd_ptr_last_pc.fill(0);
 	m_h8_cmd_ptr_last_time.fill(0.0);
@@ -2770,14 +2883,44 @@ void korgprophecy_state::v55_txd_w(int state)
 		m_v55_txd_edges++;
 	}
 
-	// The H8 firmware budgets SCI0 receive parsing from IRQ1. With native V55
-	// UART0 transmission, pulse it once per start bit instead of from the
-	// legacy driver-side queue bridge.
-	if (NATIVE_V55_H8_TRANSPORT && old_state == 1 && state == 0 &&
-		machine().time() >= m_v55_txd_byte_end)
+	// The H8 firmware budgets SCI0 receive parsing from IRQ1.  The V55 core has
+	// already set tx_bit=0 when it emits the real start bit; data-bit callbacks
+	// have tx_bit>0.  Use that authoritative state instead of inferring frame
+	// boundaries from the receiver's independently clocked bit period.
+	const bool start_bit = NATIVE_V55_H8_TRANSPORT && old_state == 1 && state == 0 &&
+		m_maincpu->debug_uart0_tx_active() && m_maincpu->debug_uart0_tx_bit() == 0;
+	if (start_bit)
 	{
-		control_flight_record(control_flight_type::V55_TO_H8, m_maincpu->debug_uart0_tx_byte());
-		m_v55_txd_byte_end = machine().time() + h8_sci0_bit_period() * 10;
+		const u8 data = m_maincpu->debug_uart0_tx_byte();
+		if (m_log_control_health_final || m_control_flight_enabled || m_trace_h8_control_events)
+		{
+			m_v55_h8_rx_tracking_started = true;
+			m_v55_h8_expected_rx.push_back(data);
+		}
+		control_flight_record(control_flight_type::V55_TO_H8, data);
+	}
+
+	if (m_sync_board_uart_edges)
+		machine().scheduler().synchronize(
+			timer_expired_delegate(FUNC(korgprophecy_state::v55_txd_sync), this),
+			(state ? 1 : 0) | (start_bit ? 2 : 0));
+	else
+	{
+		if (start_bit)
+		{
+			pulse_h8_irq1("TXD0_START");
+			const attotime wire_bit = attotime::from_hz(
+				u32(double(m_subcpu->unscaled_clock()) / 384.0 + 0.5));
+			m_h8_irq1_frame_timer->adjust(wire_bit * 39 / 4);
+		}
+		m_subcpu->sci_rx_w<0>(state);
+	}
+}
+
+TIMER_CALLBACK_MEMBER(korgprophecy_state::v55_txd_sync)
+{
+	if (BIT(param, 1))
+	{
 		pulse_h8_irq1("TXD0_START");
 		// Sample late in the stop bit, after the H8 SCI has accepted the frame.
 		// A following start bit reschedules this timer for a back-to-back byte.
@@ -2785,8 +2928,7 @@ void korgprophecy_state::v55_txd_w(int state)
 			u32(double(m_subcpu->unscaled_clock()) / 384.0 + 0.5));
 		m_h8_irq1_frame_timer->adjust(wire_bit * 39 / 4);
 	}
-
-	m_subcpu->sci_rx_w<0>(state);
+	m_subcpu->sci_rx_w<0>(BIT(param, 0));
 }
 
 void korgprophecy_state::v55_txd1_w(int state)
@@ -3031,6 +3173,15 @@ void korgprophecy_state::control_flight_record(control_flight_type type, u8 data
 	event.h8_error_status = m_subcpu->debug_sci_last_rx_error<0>();
 	event.h8_error_pc = m_subcpu->debug_sci_last_rx_error_pc<0>();
 	event.h8_error_time = m_subcpu->debug_sci_last_rx_error_time<0>();
+	event.h8_current = h8.read_dword(0x0408a4);
+	event.h8_sem1_head = h8.read_dword(0x0408b0);
+	event.h8_tcb0_next = h8.read_dword(0x040804);
+	event.h8_sem1_count = h8.read_byte(0x0483c8);
+	event.h8_parser_remaining = h8.read_word(0x04829c);
+	event.h8_parser_state = h8.read_byte(0x048c22);
+	event.h8_rx_expected = type == control_flight_type::H8_RX_MISMATCH
+		? m_v55_h8_rx_last_expected
+		: (m_v55_h8_expected_rx.empty() ? 0 : m_v55_h8_expected_rx.front());
 
 	m_control_flight_head = (m_control_flight_head + 1) % CONTROL_FLIGHT_CAPACITY;
 	m_control_flight_count = std::min(m_control_flight_count + 1, CONTROL_FLIGHT_CAPACITY);
@@ -3126,6 +3277,8 @@ void korgprophecy_state::control_flight_dump()
 		case control_flight_type::H8_TO_V55_BAD_STOP: return "H2V_BAD_STOP";
 		case control_flight_type::MIDI_TO_V55: return "MIDI";
 		case control_flight_type::H8_POINTER_WRITE: return "H8PTR";
+		case control_flight_type::H8_RTOS_WRITE: return "H8RTOS";
+		case control_flight_type::H8_RX_MISMATCH: return "H8RX_BAD";
 		case control_flight_type::H8_SCI_ERROR: return "H8ERR";
 		case control_flight_type::STALL: return "STALL";
 		}
@@ -3144,14 +3297,18 @@ void korgprophecy_state::control_flight_dump()
 			"KPROP_FLIGHT,I=%u,T=%.9f,E=%s,D=%02X,VPC=%06X,HPC=%06X,"
 			"MB=%04X/%04X/%04X,CTRL=%04X/%04X,H8CMD=%03X/%03X,"
 			"A716=%02X,A721=%02X,U0=%02X/%02X/%02X,IRQS=%02X/%02X,SCI=%02X/%02X,"
-			"H8E=%u/%02X/%06X/%.9f\n",
+			"H8E=%u/%02X/%06X/%.9f,RTOS=%06X/%06X/%06X/%02X,"
+			"PARSER=%02X/%04X,RXEXP=%02X\n",
 			i, event.time, event_name(event.type), event.data, event.vpc, event.hpc,
 			event.mb_w, event.mb_r, event.mb_count, event.ctrl_w, event.ctrl_r,
 			event.h8_w, event.h8_r, event.a716, event.a721,
 			event.uart0_mode, event.uart0_status, event.uart0_flags,
 			event.irq_pending, event.irq_service, event.h8_ssr, event.h8_rdr,
 			event.h8_error_count, event.h8_error_status,
-			event.h8_error_pc, event.h8_error_time);
+			event.h8_error_pc, event.h8_error_time, event.h8_current,
+			event.h8_sem1_head, event.h8_tcb0_next, event.h8_sem1_count,
+			event.h8_parser_state, event.h8_parser_remaining,
+			event.h8_rx_expected);
 	}
 	std::fprintf(stderr, "KPROP_FLIGHT_END\n");
 }
@@ -3374,7 +3531,16 @@ void korgprophecy_state::h8_txd0_w(int state)
 		m_h8_txd_sample_timer->adjust(h8_sci0_bit_period() + (h8_sci0_bit_period() / 2));
 	}
 
-	m_maincpu->rxd_w(state);
+	if (m_sync_board_uart_edges)
+		machine().scheduler().synchronize(
+			timer_expired_delegate(FUNC(korgprophecy_state::h8_txd_sync), this), state);
+	else
+		m_maincpu->rxd_w(state);
+}
+
+TIMER_CALLBACK_MEMBER(korgprophecy_state::h8_txd_sync)
+{
+	m_maincpu->rxd_w(param ? 1 : 0);
 }
 
 void korgprophecy_state::update_h8_cts_from_port8()

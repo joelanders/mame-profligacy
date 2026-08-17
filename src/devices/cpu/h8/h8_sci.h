@@ -54,6 +54,12 @@ public:
 	u8 debug_last_rx_error() const { return m_last_rx_error; }
 	u32 debug_last_rx_error_pc() const { return m_last_rx_error_pc; }
 	double debug_last_rx_error_time() const { return m_last_rx_error_time; }
+	double debug_rx_start_time() const { return m_debug_rx_start_time; }
+	u8 debug_rx_sample_count() const { return m_debug_rx_sample_count; }
+	double debug_rx_sample_time(u8 index) const { return m_debug_rx_sample_times[index]; }
+	u8 debug_rx_sample_state(u8 index) const { return m_debug_rx_sample_states[index]; }
+	u8 debug_rx_sample_value(u8 index) const { return m_debug_rx_sample_values[index]; }
+	void debug_enable_rx_capture(bool enable) { m_debug_rx_capture = enable; }
 
 	void do_rx_w(int state);
 	void do_clk_w(int state);
@@ -128,6 +134,12 @@ protected:
 	u64 m_clock_event, m_clock_step, m_divider;
 	u64 m_rx_error_count;
 	std::array<u64, 3> m_rx_error_types;
+	bool m_debug_rx_capture;
+	double m_debug_rx_start_time;
+	u8 m_debug_rx_sample_count;
+	std::array<double, 12> m_debug_rx_sample_times;
+	std::array<u8, 12> m_debug_rx_sample_states;
+	std::array<u8, 12> m_debug_rx_sample_values;
 	u8 m_last_rx_error;
 	u32 m_last_rx_error_pc;
 	double m_last_rx_error_time;

@@ -74,6 +74,12 @@ public:
 	template<int Sci> u8 debug_sci_last_rx_error() const { return m_sci[Sci]->debug_last_rx_error(); }
 	template<int Sci> u32 debug_sci_last_rx_error_pc() const { return m_sci[Sci]->debug_last_rx_error_pc(); }
 	template<int Sci> double debug_sci_last_rx_error_time() const { return m_sci[Sci]->debug_last_rx_error_time(); }
+	template<int Sci> double debug_sci_rx_start_time() const { return m_sci[Sci]->debug_rx_start_time(); }
+	template<int Sci> u8 debug_sci_rx_sample_count() const { return m_sci[Sci]->debug_rx_sample_count(); }
+	template<int Sci> double debug_sci_rx_sample_time(u8 index) const { return m_sci[Sci]->debug_rx_sample_time(index); }
+	template<int Sci> u8 debug_sci_rx_sample_state(u8 index) const { return m_sci[Sci]->debug_rx_sample_state(index); }
+	template<int Sci> u8 debug_sci_rx_sample_value(u8 index) const { return m_sci[Sci]->debug_rx_sample_value(index); }
+	template<int Sci> void debug_enable_sci_rx_capture(bool enable) { m_sci[Sci]->debug_enable_rx_capture(enable); }
 
 	void nvram_set_battery(int state) { m_nvram_battery = bool(state); } // default is 1 (nvram_enable_backup needs to be true)
 	void nvram_set_default_value(u16 val) { m_nvram_defval = val; } // default is 0
