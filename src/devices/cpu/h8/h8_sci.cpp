@@ -81,7 +81,10 @@ h8_sci_device::h8_sci_device(const machine_config &mconfig, const char *tag, dev
 	m_tx_state(0), m_rx_state(0), m_tx_bit(0), m_rx_bit(0), m_clock_state(0), m_tx_parity(0), m_rx_parity(0), m_tx_clock_counter(0), m_rx_clock_counter(0),
 	m_clock_mode(INTERNAL_ASYNC), m_ext_clock_value(false), m_rx_value(true),
 	m_rdr(0), m_tdr(0), m_smr(0), m_scr(0), m_ssr(0), m_ssr_read(0), m_brr(0), m_rsr(0), m_tsr(0), m_clock_event(0), m_divider(0),
-	m_rx_error_count(0), m_rx_error_types{}, m_last_rx_error(0),
+	m_rx_error_count(0), m_rx_error_types{}, m_debug_rx_capture(false),
+	m_debug_rx_start_time(0.0),
+	m_debug_rx_sample_count(0), m_debug_rx_sample_times{},
+	m_debug_rx_sample_states{}, m_debug_rx_sample_values{}, m_last_rx_error(0),
 	m_last_rx_error_pc(0), m_last_rx_error_time(0.0)
 {
 	m_external_clock_period = attotime::never;
@@ -343,6 +346,11 @@ void h8_sci_device::device_start()
 	save_item(NAME(m_divider));
 	save_item(NAME(m_rx_error_count));
 	save_item(NAME(m_rx_error_types));
+	save_item(NAME(m_debug_rx_start_time));
+	save_item(NAME(m_debug_rx_sample_count));
+	save_item(NAME(m_debug_rx_sample_times));
+	save_item(NAME(m_debug_rx_sample_states));
+	save_item(NAME(m_debug_rx_sample_values));
 	save_item(NAME(m_last_rx_error));
 	save_item(NAME(m_last_rx_error_pc));
 	save_item(NAME(m_last_rx_error_time));
@@ -371,6 +379,11 @@ void h8_sci_device::device_reset()
 	m_rx_clock_counter = 0;
 	m_rx_error_count = 0;
 	m_rx_error_types.fill(0);
+	m_debug_rx_start_time = 0.0;
+	m_debug_rx_sample_count = 0;
+	m_debug_rx_sample_times.fill(0.0);
+	m_debug_rx_sample_states.fill(0);
+	m_debug_rx_sample_values.fill(0);
 	m_last_rx_error = 0;
 	m_last_rx_error_pc = 0;
 	m_last_rx_error_time = 0.0;
@@ -673,6 +686,11 @@ void h8_sci_device::tx_sync_step()
 
 void h8_sci_device::rx_start()
 {
+	if (m_debug_rx_capture)
+	{
+		m_debug_rx_start_time = machine().time().as_double();
+		m_debug_rx_sample_count = 0;
+	}
 	m_rx_parity = m_smr & SMR_OE ? 0 : 1;
 	m_rsr = 0x00;
 	LOGMASKED(LOG_STATE, "start receive\n");
@@ -737,6 +755,13 @@ void h8_sci_device::rx_async_tick()
 
 void h8_sci_device::rx_async_step()
 {
+	if (m_debug_rx_capture && m_debug_rx_sample_count < m_debug_rx_sample_times.size())
+	{
+		const u8 index = m_debug_rx_sample_count++;
+		m_debug_rx_sample_times[index] = machine().time().as_double();
+		m_debug_rx_sample_states[index] = u8(m_rx_state);
+		m_debug_rx_sample_values[index] = m_rx_value ? 1 : 0;
+	}
 	LOGMASKED(LOG_STATE, "rx_async_step state=%s bit=%d\n", state_names[m_rx_state], m_rx_bit);
 	switch(m_rx_state) {
 	case ST_START:
