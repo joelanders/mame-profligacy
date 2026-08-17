@@ -1267,6 +1267,28 @@ void korgprophecy_state::machine_stop()
 			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTST0),
 			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTSR1),
 			m_maincpu->debug_serial_irq_control(v55_device::SERIAL_IRQ_INTST1));
+
+		// The zero-SCI-error freeze leaves a small partial protocol record in the
+		// H8 command ring while the V55 waits with more bytes in its mailbox. Keep
+		// the shutdown snapshot compact but include enough parser state and payload
+		// to distinguish an incomplete record from a lost task notification.
+		const u16 mb_r = v55.read_word(MB_PHYS_A70C) & 0x03ff;
+		const u16 mb_count = std::min<u16>(v55.read_word(MB_PHYS_A70E), 16);
+		const u16 ctrl_r = v55.read_word(MB_PHYS_A712) & 0x03ff;
+		const u16 h8_count = std::min<u16>((h8_cmd_w - h8_cmd_r) & 0x03ff, 16);
+		std::fprintf(stderr,
+			"KPROP_FINAL_PROTOCOL,PSTATE=%02X,REMAIN=%04X,BUDGET=%04X,TASKWAIT=%02X,H8NEXT=",
+			h8.read_byte(0x048c22), h8.read_word(0x04829c), h8.read_word(0x04829e),
+			h8.read_byte(0x0483c8));
+		for (u16 i = 0; i < h8_count; ++i)
+			std::fprintf(stderr, "%02X", h8.read_byte(0x047e94 + ((h8_cmd_r + i) & 0x03ff)));
+		std::fprintf(stderr, ",MBNEXT=");
+		for (u16 i = 0; i < mb_count; ++i)
+			std::fprintf(stderr, "%02X", v55.read_byte(MBQ_PHYS_DATA_BASE + ((mb_r + i) & 0x03ff)));
+		std::fprintf(stderr, ",CTRLNEXT=");
+		for (u16 i = 0; i < 16; ++i)
+			std::fprintf(stderr, "%02X", v55.read_byte(MBQ_PHYS_CTRL_BASE + ((ctrl_r + i) & 0x03ff)));
+		std::fprintf(stderr, "\n");
 	}
 }
 
@@ -3076,7 +3098,8 @@ void korgprophecy_state::control_flight_sample()
 	// A two-byte control-descriptor difference is the normal idle baseline.
 	// The reproduced permanent freeze has work stranded on both sides of the
 	// wire, so require both queues before freezing the diagnostic history.
-	const bool backlog = words[2] != 0 && words[5] != words[6];
+	const bool backlog = words[2] != 0
+		&& (words[5] != words[6] || BIT(bytes[7], 6));
 	const bool uart_idle = !(uart_flags & 0x07) && bytes[5] == 0 && bytes[6] == 0;
 	if (!m_control_flight_triggered && now >= 15.0 && backlog && uart_idle &&
 		(now - m_control_flight_last_progress) >= 0.250)
