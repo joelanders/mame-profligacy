@@ -12,6 +12,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 OFFICIAL_BASE = "a60f95ea04a4f9b4bd950c88068cce1dcdc04b6e"
 OFFICIAL_FETCH = "https://github.com/mamedev/mame.git"
+# Alpha.4 was published with GitHub's merge-commit button despite the release
+# procedure requiring a fast-forward.  Treat that already-public commit as the
+# immutable history baseline, but continue rejecting any new merge commits so
+# the mistake cannot silently repeat.
+PUBLIC_HISTORY_BASE = "b801549f45ddfffba79dd8403f592254af8a3764"
 
 ALLOWED_EXACT = {
     ".github/workflows/ci-linux.yml",
@@ -100,9 +105,12 @@ def main() -> int:
     if text("merge-base", OFFICIAL_BASE, "HEAD") != OFFICIAL_BASE:
         failures.append("HEAD does not descend from the pinned official base")
 
-    merge_commits = text("rev-list", "--merges", f"{OFFICIAL_BASE}..HEAD")
+    if text("merge-base", PUBLIC_HISTORY_BASE, "HEAD") != PUBLIC_HISTORY_BASE:
+        failures.append("HEAD does not descend from the current public history baseline")
+
+    merge_commits = text("rev-list", "--merges", f"{PUBLIC_HISTORY_BASE}..HEAD")
     if merge_commits:
-        failures.append("merge commits exist above the official base")
+        failures.append("new merge commits exist above the public history baseline")
 
     if not args.content_only:
         heads = set(text("for-each-ref", "--format=%(refname:short)", "refs/heads").splitlines())
