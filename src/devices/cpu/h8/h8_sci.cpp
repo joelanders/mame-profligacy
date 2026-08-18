@@ -81,7 +81,7 @@ h8_sci_device::h8_sci_device(const machine_config &mconfig, const char *tag, dev
 	m_tx_state(0), m_rx_state(0), m_tx_bit(0), m_rx_bit(0), m_clock_state(0), m_tx_parity(0), m_rx_parity(0), m_tx_clock_counter(0), m_rx_clock_counter(0),
 	m_clock_mode(INTERNAL_ASYNC), m_ext_clock_value(false), m_rx_value(true),
 	m_rdr(0), m_tdr(0), m_smr(0), m_scr(0), m_ssr(0), m_ssr_read(0), m_brr(0), m_rsr(0), m_tsr(0), m_clock_event(0), m_divider(0),
-	m_rx_error_count(0), m_rx_error_types{}, m_debug_rx_capture(false),
+	m_rx_error_count(0), m_rx_frames(0), m_rx_accepted(0), m_rx_error_types{}, m_debug_rx_capture(false),
 	m_debug_rx_start_time(0.0),
 	m_debug_rx_sample_count(0), m_debug_rx_sample_times{},
 	m_debug_rx_sample_states{}, m_debug_rx_sample_values{}, m_last_rx_error(0),
@@ -345,6 +345,8 @@ void h8_sci_device::device_start()
 	save_item(NAME(m_clock_step));
 	save_item(NAME(m_divider));
 	save_item(NAME(m_rx_error_count));
+	save_item(NAME(m_rx_frames));
+	save_item(NAME(m_rx_accepted));
 	save_item(NAME(m_rx_error_types));
 	save_item(NAME(m_debug_rx_start_time));
 	save_item(NAME(m_debug_rx_sample_count));
@@ -378,6 +380,8 @@ void h8_sci_device::device_reset()
 	m_tx_clock_counter = 0;
 	m_rx_clock_counter = 0;
 	m_rx_error_count = 0;
+	m_rx_frames = 0;
+	m_rx_accepted = 0;
 	m_rx_error_types.fill(0);
 	m_debug_rx_start_time = 0.0;
 	m_debug_rx_sample_count = 0;
@@ -715,8 +719,24 @@ void h8_sci_device::record_rx_error(u8 flag)
 	m_last_rx_error_time = machine().time().as_double();
 }
 
+bool h8_sci_device::debug_inject_rx_byte(u8 data)
+{
+	// Complete one already-framed byte on an internal board link.  Never
+	// overwrite unread firmware data or deliver while reception is disabled.
+	if (!(m_scr & SCR_RE) || (m_ssr & SSR_RDRF))
+		return false;
+	++m_rx_frames;
+	++m_rx_accepted;
+	m_rdr = data;
+	m_ssr |= SSR_RDRF;
+	if (m_scr & SCR_RIE)
+		m_intc->internal_interrupt(m_rxi_int);
+	return true;
+}
+
 void h8_sci_device::rx_done()
 {
+	++m_rx_frames;
 	if(!(m_ssr & SSR_FER)) {
 		if((m_smr & SMR_PE) && m_rx_parity) {
 			m_ssr |= SSR_PER;
@@ -728,6 +748,7 @@ void h8_sci_device::rx_done()
 			LOGMASKED(LOG_DATA, "Receive overrun\n");
 		} else {
 			m_ssr |= SSR_RDRF;
+			++m_rx_accepted;
 			LOGMASKED(LOG_DATA, "Received %02x '%c'\n", m_rsr, m_rsr >= 32 && m_rsr < 127 ? m_rsr : '.');
 			m_rdr = m_rsr;
 		}

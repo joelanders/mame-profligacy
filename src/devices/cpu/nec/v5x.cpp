@@ -916,6 +916,7 @@ v55_device::v55_device(const machine_config &mconfig, const char *tag, device_t 
 	, m_uart0_tx_loaded(false)
 	, m_uart0_rx_active(false)
 	, m_uart0_rx_full(false)
+	, m_uart0_tx_completions(0)
 	, m_rxd1(1)
 	, m_cts1(0)
 	, m_uart1_txd_state(1)
@@ -1842,6 +1843,7 @@ void v55_device::device_start()
 	save_item(NAME(m_uart0_tx_loaded));
 	save_item(NAME(m_uart0_rx_active));
 	save_item(NAME(m_uart0_rx_full));
+	save_item(NAME(m_uart0_tx_completions));
 	save_item(NAME(m_rxd1));
 	save_item(NAME(m_cts1));
 	save_item(NAME(m_uart1_txd_state));
@@ -1944,6 +1946,7 @@ void v55_device::device_reset()
 	m_uart0_tx_loaded = false;
 	m_uart0_rx_active = false;
 	m_uart0_rx_full = false;
+	m_uart0_tx_completions = 0;
 	m_rxd1 = 1;
 	m_cts1 = 0;
 	m_uart1_txd_state = 1;
@@ -2121,6 +2124,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		return;
 	}
 
+	++m_uart0_tx_completions;
 	m_uart0_tx_active = false;
 	update_uart0_status();
 	m_uart0_tx_timer->adjust(attotime::never);

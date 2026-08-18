@@ -388,6 +388,7 @@ public:
 	u8 debug_uart0_tx_bit() const { return m_uart0_tx_bit; }
 	bool debug_uart0_tx_active() const { return m_uart0_tx_active; }
 	bool debug_uart0_tx_loaded() const { return m_uart0_tx_loaded; }
+	u64 debug_uart0_tx_completions() const { return m_uart0_tx_completions; }
 	bool debug_uart0_rx_full() const { return m_uart0_rx_full; }
 	u8 debug_uart0_cts() const { return m_cts0; }
 	u8 debug_serial_irq_control(serial_irq_source source) const
@@ -513,6 +514,7 @@ private:
 	bool m_uart0_tx_loaded;
 	bool m_uart0_rx_active;
 	bool m_uart0_rx_full;
+	u64 m_uart0_tx_completions;
 	u8 m_rxd1;
 	u8 m_cts1;
 	u8 m_uart1_txd_state;

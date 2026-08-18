@@ -601,6 +601,19 @@ private:
 	u32 m_midi_rxd1_edges = 0;
 	u32 m_h8_txd_edges = 0;
 	bool m_sync_board_uart_edges = true;
+	double m_fault_drop_v55_h8_3x_tail_at = -1.0;
+	u8 m_fault_drop_v55_h8_frames = 0;
+	bool m_fault_drop_v55_h8_armed = false;
+	bool m_fault_drop_v55_h8_current = false;
+	bool m_fault_drop_v55_h8_fired = false;
+	std::array<u8, 16> m_v55_h8_delivery_queue{};
+	u8 m_v55_h8_delivery_head = 0;
+	u8 m_v55_h8_delivery_count = 0;
+	u64 m_v55_h8_delivery_accepted_seen = 0;
+	double m_v55_h8_delivery_gap_since = -1.0;
+	u64 m_v55_h8_delivery_retries = 0;
+	u64 m_v55_h8_delivery_overflows = 0;
+	bool m_v55_h8_delivery_retry = true;
 	bool m_log_control_health = false;
 	bool m_log_control_health_final = false;
 	bool m_control_flight_enabled = false;
@@ -724,6 +737,10 @@ void korgprophecy_state::machine_start()
 		m_control_flight_enabled = std::strcmp(e, "0") != 0;
 	if (const char *e = std::getenv("KPROP_SYNC_BOARD_UART_EDGES"))
 		m_sync_board_uart_edges = std::strcmp(e, "0") != 0;
+	if (const char *e = std::getenv("KPROP_FAULT_DROP_V55_H8_3X_TAIL_AT"))
+		m_fault_drop_v55_h8_3x_tail_at = std::strtod(e, nullptr);
+	if (const char *e = std::getenv("KPROP_V55_H8_DELIVERY_RETRY"))
+		m_v55_h8_delivery_retry = std::strcmp(e, "0") != 0;
 	machine().add_notifier(MACHINE_NOTIFY_EXIT,
 		machine_notify_delegate(&korgprophecy_state::machine_stop, this));
 	if (const char *e = std::getenv("KPROP_TRACE_H8_CONTROL_EVENTS"))
@@ -920,6 +937,17 @@ void korgprophecy_state::machine_start()
 	save_item(NAME(m_h8_irq1_start_pulses));
 	save_item(NAME(m_h8_irq1_frame_checks));
 	save_item(NAME(m_h8_irq1_frame_wakes));
+	save_item(NAME(m_fault_drop_v55_h8_frames));
+	save_item(NAME(m_fault_drop_v55_h8_armed));
+	save_item(NAME(m_fault_drop_v55_h8_current));
+	save_item(NAME(m_fault_drop_v55_h8_fired));
+	save_item(NAME(m_v55_h8_delivery_queue));
+	save_item(NAME(m_v55_h8_delivery_head));
+	save_item(NAME(m_v55_h8_delivery_count));
+	save_item(NAME(m_v55_h8_delivery_accepted_seen));
+	save_item(NAME(m_v55_h8_delivery_gap_since));
+	save_item(NAME(m_v55_h8_delivery_retries));
+	save_item(NAME(m_v55_h8_delivery_overflows));
 	save_item(NAME(m_h8_cmd_ptr_writes));
 	save_item(NAME(m_h8_cmd_ptr_last_pc));
 	save_item(NAME(m_h8_cmd_ptr_last_time));
@@ -1369,6 +1397,13 @@ void korgprophecy_state::machine_stop()
 		for (u16 i = 0; i < 16; ++i)
 			std::fprintf(stderr, "%02X", v55.read_byte(MBQ_PHYS_CTRL_BASE + ((ctrl_r + i) & 0x03ff)));
 		std::fprintf(stderr, "\n");
+		std::fprintf(stderr,
+			"KPROP_V55_H8_DELIVERY,SENT=%llu,FRAMES=%llu,ACCEPTED=%llu,RETRIES=%llu,OVERFLOWS=%llu\n",
+			(unsigned long long)m_maincpu->debug_uart0_tx_completions(),
+			(unsigned long long)m_subcpu->debug_sci_rx_frames<0>(),
+			(unsigned long long)m_subcpu->debug_sci_rx_accepted<0>(),
+			(unsigned long long)m_v55_h8_delivery_retries,
+			(unsigned long long)m_v55_h8_delivery_overflows);
 
 		// Firmware semaphore 1 gates the board-command task.  If complete commands
 		// remain queued, capture the RTOS lists and saved task contexts so a missed
@@ -1405,6 +1440,17 @@ void korgprophecy_state::machine_reset()
 	m_h8_port8 = 0xff;
 	m_h8_cts_state = 0;
 	m_v55_txd_state = 1;
+	m_fault_drop_v55_h8_frames = 0;
+	m_fault_drop_v55_h8_armed = false;
+	m_fault_drop_v55_h8_current = false;
+	m_fault_drop_v55_h8_fired = false;
+	m_v55_h8_delivery_queue.fill(0);
+	m_v55_h8_delivery_head = 0;
+	m_v55_h8_delivery_count = 0;
+	m_v55_h8_delivery_accepted_seen = 0;
+	m_v55_h8_delivery_gap_since = -1.0;
+	m_v55_h8_delivery_retries = 0;
+	m_v55_h8_delivery_overflows = 0;
 	m_v55_txd1_state = 1;
 	m_h8_txd_state = 1;
 	m_v55_txd_edges = 0;
@@ -1685,6 +1731,56 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::v55_h8_service_tick)
 {
 	address_space &space = m_maincpu->space(AS_PROGRAM);
 	poll_h8_tx_ring();
+
+	// A physical internal UART cannot silently discard a completed frame. Keep
+	// launched bytes until SCI0 accepts them, and repair only a stable, error-free
+	// completion/acceptance deficit after both endpoints are fully idle.
+	const u64 accepted_now = m_subcpu->debug_sci_rx_accepted<0>();
+	if (accepted_now < m_v55_h8_delivery_accepted_seen)
+	{
+		m_v55_h8_delivery_head = 0;
+		m_v55_h8_delivery_count = 0;
+		m_v55_h8_delivery_gap_since = -1.0;
+	}
+	else
+	{
+		u64 accepted_delta = accepted_now - m_v55_h8_delivery_accepted_seen;
+		while (accepted_delta != 0 && m_v55_h8_delivery_count != 0)
+		{
+			m_v55_h8_delivery_head = (m_v55_h8_delivery_head + 1) % m_v55_h8_delivery_queue.size();
+			--m_v55_h8_delivery_count;
+			--accepted_delta;
+		}
+	}
+	m_v55_h8_delivery_accepted_seen = accepted_now;
+
+	const bool delivery_idle = !m_maincpu->debug_uart0_tx_active() &&
+		!m_maincpu->debug_uart0_tx_loaded() &&
+		m_maincpu->debug_serial_irq_pending() == 0 &&
+		m_maincpu->debug_serial_irq_in_service() == 0 &&
+		m_subcpu->debug_sci_rx_idle<0>();
+	const bool delivery_gap = delivery_idle && m_v55_h8_delivery_count != 0 &&
+		m_v55_h8_delivery_overflows == 0 &&
+		m_subcpu->debug_sci_rx_frames<0>() == accepted_now &&
+		m_maincpu->debug_uart0_tx_completions() > accepted_now;
+	const double delivery_now = machine().time().as_double();
+	if (!delivery_gap)
+		m_v55_h8_delivery_gap_since = -1.0;
+	else if (m_v55_h8_delivery_gap_since < 0.0)
+		m_v55_h8_delivery_gap_since = delivery_now;
+	else if (m_v55_h8_delivery_retry &&
+		(delivery_now - m_v55_h8_delivery_gap_since) >= 0.002 &&
+		m_subcpu->debug_inject_sci_rx_byte<0>(m_v55_h8_delivery_queue[m_v55_h8_delivery_head]))
+	{
+		++m_v55_h8_delivery_retries;
+		std::fprintf(stderr,
+			"KPROP_DELIVERY_RETRY,T=%.9f,B=%02X,COUNT=%llu,SENT=%llu,ACCEPTED=%llu\n",
+			delivery_now, m_v55_h8_delivery_queue[m_v55_h8_delivery_head],
+			(unsigned long long)m_v55_h8_delivery_retries,
+			(unsigned long long)m_maincpu->debug_uart0_tx_completions(),
+			(unsigned long long)accepted_now);
+		m_v55_h8_delivery_gap_since = -1.0;
+	}
 
 
 	// KPSHIP-ACCURACY: bring-up scan-queue mirror; the real producer path still stalls.
@@ -2892,13 +2988,50 @@ void korgprophecy_state::v55_txd_w(int state)
 	if (start_bit)
 	{
 		const u8 data = m_maincpu->debug_uart0_tx_byte();
+		if (m_v55_h8_delivery_count < m_v55_h8_delivery_queue.size())
+		{
+			const size_t tail = (m_v55_h8_delivery_head + m_v55_h8_delivery_count) %
+				m_v55_h8_delivery_queue.size();
+			m_v55_h8_delivery_queue[tail] = data;
+			++m_v55_h8_delivery_count;
+		}
+		else
+		{
+			++m_v55_h8_delivery_overflows;
+		}
+
+		m_fault_drop_v55_h8_current = false;
+		if (m_fault_drop_v55_h8_frames != 0)
+		{
+			m_fault_drop_v55_h8_current = true;
+			--m_fault_drop_v55_h8_frames;
+			m_fault_drop_v55_h8_fired = m_fault_drop_v55_h8_frames == 0;
+		}
+		else if (m_fault_drop_v55_h8_armed)
+		{
+			m_fault_drop_v55_h8_armed = false;
+			m_fault_drop_v55_h8_frames = 2;
+		}
+		else if (!m_fault_drop_v55_h8_fired &&
+			m_fault_drop_v55_h8_3x_tail_at >= 0.0 &&
+			machine().time().as_double() >= m_fault_drop_v55_h8_3x_tail_at &&
+			m_subcpu->space(AS_PROGRAM).read_byte(0x048c22) == 0x00 &&
+			(data & 0xf0) == 0x30)
+		{
+			m_fault_drop_v55_h8_armed = true;
+		}
 		if (m_log_control_health_final || m_control_flight_enabled || m_trace_h8_control_events)
 		{
 			m_v55_h8_rx_tracking_started = true;
 			m_v55_h8_expected_rx.push_back(data);
 		}
 		control_flight_record(control_flight_type::V55_TO_H8, data);
+		if (m_fault_drop_v55_h8_current)
+			std::fprintf(stderr, "KPROP_FAULT_DROP,T=%.9f,B=%02X\n",
+				machine().time().as_double(), data);
 	}
+	if (m_fault_drop_v55_h8_current)
+		return;
 
 	if (m_sync_board_uart_edges)
 		machine().scheduler().synchronize(
