@@ -4,8 +4,8 @@
 #include "tms57002_jit.h"
 #include "tms57002_ops.h"   // M2 pooled op-body emitter (op_poolable / emit_op_pooled)
 
-// Host-arch codegen backend. THE HOST HERE IS x86-64 (Intel) — the a64 path is preserved for
-// a future Apple Silicon host but does not compile/run here.
+// Host-architecture codegen backends. Both x86-64 and AArch64 are compiled and
+// exercised by the Prophecy portability checks.
 #if defined(__aarch64__)
 #include <asmjit/a64.h>   // arm64 Compiler + emitter
 #define KPROP_JIT_A64 1
@@ -381,11 +381,10 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const u8 param = u8(dsp.jit_inst_param(cur));
 			const int off_aacc = int(tms57002_device::jit_off_aacc());
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			{ x86::Gp v = cc.new_gp32(); cc.mov(v, x86::dword_ptr(dev, off_cmem + int(param) * 4)); cc.mov(x86::dword_ptr(dev, off_aacc), v); }
 			cc.jmp(doneop);
@@ -520,11 +519,10 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const int off_ca = int(tms57002_device::jit_off_ca());
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
 			const int off_creg = int(tms57002_device::jit_off_creg());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			x86::Gp addr = cc.new_gpz();
 			cc.movzx(addr, x86::byte_ptr(dev, off_ba0)); cc.add(addr, Imm(param)); cc.and_(addr, Imm(0xff));
@@ -594,11 +592,10 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const int off_ca = int(tms57002_device::jit_off_ca());
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
 			const int off_creg = int(tms57002_device::jit_off_creg());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			x86::Gp c = cc.new_gp32();
 			if (by_ca) { x86::Gp cai = cc.new_gpz(); cc.movzx(cai, x86::byte_ptr(dev, off_ca)); cc.mov(c, x86::dword_ptr(dev, cai, 2, off_cmem)); }
@@ -625,11 +622,10 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const bool by_ca = (op == 1131);
 			const int off_ca = int(tms57002_device::jit_off_ca());
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			x86::Gp v = cc.new_gp32();
 			if (by_ca) { x86::Gp cai = cc.new_gpz(); cc.movzx(cai, x86::byte_ptr(dev, off_ca)); cc.mov(v, x86::dword_ptr(dev, cai, 2, off_cmem)); }
@@ -673,11 +669,10 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const int off_aacc = int(tms57002_device::jit_off_aacc());
 			const int off_st1 = int(tms57002_device::jit_off_st1());
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			x86::Gp rr = cc.new_gpz();
 			cc.movsxd(rr, x86::dword_ptr(dev, off_cmem + int(param) * 4));   // rr = (int64)(int32)cmem[param]
@@ -742,11 +737,10 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const int off_aacc = int(tms57002_device::jit_off_aacc());
 			const int off_ca = int(tms57002_device::jit_off_ca());
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			x86::Gp cai = cc.new_gpz(); cc.movzx(cai, x86::byte_ptr(dev, off_ca));
 			x86::Gp c = cc.new_gp32(); cc.mov(c, x86::dword_ptr(dev, cai, 2, off_cmem));
@@ -813,8 +807,7 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			// st1|=ST1_MOV + clip) or pending cmem update. Validates the %mo (macc-output) pattern.
 			const u8 param = u8(dsp.jit_inst_param(cur));
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			Label deopt = cc.new_label(), doneop = cc.new_label();
 			// macc overflow -> deopt: m1 = macc_read & 0xf800000000000; over if m1 != 0 && m1 != mask
@@ -825,7 +818,7 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 				cc.jz(no_ovf); cc.cmp(m1, mask); cc.jne(deopt);
 				cc.bind(no_ovf);
 			}
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			x86::Gp mo = cc.new_gpz(); cc.mov(mo, r_macc_r); cc.sar(mo, Imm(16));   // macc_read >> 16
 			x86::Gp rr = cc.new_gpz(); cc.movsxd(rr, x86::dword_ptr(dev, off_cmem + int(param) * 4));  // (int32)cmem[param]
@@ -877,13 +870,12 @@ static asmjit::x86::Gp emit_pc_body(asmjit::x86::Compiler &cc, asmjit::x86::Gp d
 			const int off_cmem = int(tms57002_device::jit_off_cmem());
 			const int off_dmem0 = int(tms57002_device::jit_off_dmem0());
 			const int off_ba0 = int(tms57002_device::jit_off_ba0());
-			const int off_uch = int(tms57002_device::jit_off_uc_head());
-			const int off_uct = int(tms57002_device::jit_off_uc_tail());
+			const int off_ucc = int(tms57002_device::jit_off_uc_count());
 			const int off_force = int(tms57002_device::jit_off_cmem_force());
 			const u32 flag = is_wre ? tms57002_device::jit_s_write_mask() : tms57002_device::jit_s_read_mask();
 			Label skip = cc.new_label(), deopt = cc.new_label(), done = cc.new_label();
 			{ x86::Gp s = cc.new_gp32(); cc.mov(s, x86::dword_ptr(dev, off_sti)); cc.test(s, Imm(rw_mask)); cc.jnz(skip); }   // transaction pending -> nop
-			{ x86::Gp h = cc.new_gp32(), t = cc.new_gp32(); cc.movzx(h, x86::byte_ptr(dev, off_uch)); cc.movzx(t, x86::byte_ptr(dev, off_uct)); cc.cmp(h, t); cc.jne(deopt); }
+			{ x86::Gp c = cc.new_gp32(); cc.movzx(c, x86::byte_ptr(dev, off_ucc)); cc.test(c, c); cc.jnz(deopt); }
 			{ x86::Gp f = cc.new_gp32(); cc.movzx(f, x86::byte_ptr(dev, off_force)); cc.test(f, f); cc.jnz(deopt); }
 			if (is_wre) {
 				x86::Gp addr = cc.new_gpz(); cc.movzx(addr, x86::byte_ptr(dev, off_ba0)); cc.add(addr, Imm(param)); cc.and_(addr, Imm(0xff));
@@ -1643,10 +1635,9 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 		// DSP frame is executing. If the queue is clear here, direct CMEM bodies remain safe for
 		// the whole frame; otherwise let the interpreter drain it with exact per-read timing.
 		Label safe = a.new_label();
-		a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_head())));
-		a.movzx(x86::ecx, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_tail())));
-		a.cmp(x86::eax, x86::ecx);
-		a.je(safe);
+		a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_count())));
+		a.test(x86::eax, x86::eax);
+		a.jz(safe);
 		a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_pf4_force())));
 		a.test(x86::eax, x86::eax);
 		a.jnz(safe);
@@ -1734,13 +1725,12 @@ bool emit_pooled_driver(x86::Assembler &a, tms57002_device &dsp,
 					&& tms57002::op_reads_cmem(dsp, op))
 				{
 					// CMEM-read op under KPROP_PF4_CMEM_DEOPT: deopt to the interpreter when an
-					// update is pending (head != tail) and not force-unsafe; else fast body.
+					// update is pending (count != 0) and not force-unsafe; else fast body.
 					const uint64_t icd = dsp.jit_inst_addr(cur);
 					Label do_fast = a.new_label(), guard_done = a.new_label();
-					a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_head())));
-					a.movzx(x86::ecx, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_tail())));
-					a.cmp(x86::eax, x86::ecx);
-					a.je(do_fast);                                   // no pending -> fast
+					a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_uc_count())));
+					a.test(x86::eax, x86::eax);
+					a.jz(do_fast);                                   // no pending -> fast
 					a.movzx(x86::eax, x86::byte_ptr(DEV, int(tms57002_device::jit_off_pf4_force())));
 					a.test(x86::eax, x86::eax);
 					a.jnz(do_fast);                                  // force-unsafe baseline -> fast
@@ -2011,8 +2001,7 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 	const u32 rw_mask = tms57002_device::jit_s_read_mask() | tms57002_device::jit_s_write_mask();
 	const a64::Gp DEV = a64::x19, MACC = a64::x20, MACR = a64::x21, MACW = a64::x22, AACC = a64::x23, PARAM = a64::x15;
 	const a64::Gp S0 = a64::x9, S1 = a64::x10, S2 = a64::x11;   // driver scratch (caller-saved)
-	const int off_uc_head = int(tms57002_device::jit_off_uc_head());     // CMEM-deopt guard (KPROP_PF4_CMEM_DEOPT)
-	const int off_uc_tail = int(tms57002_device::jit_off_uc_tail());
+	const int off_uc_count = int(tms57002_device::jit_off_uc_count());   // CMEM-deopt guard (KPROP_PF4_CMEM_DEOPT)
 	const int off_pf4_force = int(tms57002_device::jit_off_pf4_force());
 	const bool cmem_deopt = dsp.jit_pf4_cmem_deopt();
 
@@ -2097,9 +2086,8 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 	if (hoist_cmem_guard)
 	{
 		Label safe = a.new_label();
-		ldb(S0, off_uc_head); ldb(S1, off_uc_tail);
-		a.cmp(S0.w(), S1.w());
-		a.b_eq(safe);
+		ldb(S0, off_uc_count);
+		a.cbz(S0.w(), safe);
 		ldb(S0, off_pf4_force);
 		a.cbnz(S0.w(), safe);
 		a.mov(a64::w0, Imm(-1));
@@ -2177,13 +2165,12 @@ bool emit_pooled_driver(a64::Assembler &a, tms57002_device &dsp,
 				if (!hoist_cmem_guard && cmem_deopt && tms57002::op_reads_cmem(dsp, op))
 				{
 					// CMEM-read op under KPROP_PF4_CMEM_DEOPT: if an update is pending
-					// (head != tail) and not force-unsafe, DEOPT to the interpreter (get_cmem
+					// (count != 0) and not force-unsafe, DEOPT to the interpreter (get_cmem
 					// drains the queue at the correct time); else run the fast compiled body.
 					const uint64_t icd = dsp.jit_inst_addr(cur);
 					Label do_fast = a.new_label(), guard_done = a.new_label();
-					ldb(S0, off_uc_head); ldb(S1, off_uc_tail);
-					a.cmp(S0.w(), S1.w());
-					a.b_eq(do_fast);                 // no pending -> fast
+					ldb(S0, off_uc_count);
+					a.cbz(S0.w(), do_fast);          // no pending -> fast
 					ldb(S0, off_pf4_force);
 					a.cbnz(S0.w(), do_fast);         // force-unsafe baseline -> fast (divergent)
 					spill();
@@ -2523,23 +2510,9 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 	const int start_pc = dsp.jit_pc();
 	const u32 start_st1 = dsp.dbg_st1() & tms57002_device::jit_st1_cache();
 	const u32 ver = dsp.jit_program_version();
-	auto active_fn = [&]() -> FrameFn {
-		return dsp.jit_cmem_pending() && m_active->cmem_fn ? m_active->cmem_fn : m_active->fn;
-	};
-
-	// STEADY STATE: program unchanged AND the active entry matches (st1/ms/pc) — run its compiled frame
-	// directly. One int compare per frame; no hashing, no re-decode. This is the common case.
-	if (ver == m_last_prog_version && m_active && m_active->fn && !m_active->failed
-		&& m_active->max_steps == ms && m_active->start_pc == start_pc && m_active->start_st1 == start_st1)
-	{
-		m_pooled_runs++;
-		active_fn()(&dsp);
-		dsp.jit_finalize_if_idle();
-		return dsp.jit_end_frame();
-	}
-
-	// Finish the ALREADY-BEGUN frame via the interpreter (used for the compile frame's result AND for
-	// programs whose compile failed). Mirrors the pre-M4 interpret loop; produces the bit-exact result.
+	// Finish the ALREADY-BEGUN frame via the interpreter (used for the compile frame's result, for
+	// programs whose compile failed, and when the optional guarded-CMEM variant is unavailable).
+	// Mirrors the pre-M4 interpret loop and produces the bit-exact result.
 	auto finish_via_interp = [&]() -> std::array<u32, 4> {
 		m_frame_trace.clear();
 		int guard = ms + 16;
@@ -2552,6 +2525,35 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 		dsp.jit_finalize_if_idle();
 		return dsp.jit_end_frame();
 	};
+	auto active_fn = [&]() -> FrameFn {
+		if (dsp.jit_cmem_pending())
+		{
+			if (m_active->cmem_fn)
+			{
+				m_pooled_cmem_runs++;
+				return m_active->cmem_fn;
+			}
+			return nullptr;
+		}
+		return m_active->fn;
+	};
+
+	// STEADY STATE: program unchanged AND the active entry matches (st1/ms/pc) — run its compiled frame
+	// directly. One int compare per frame; no hashing, no re-decode. This is the common case.
+	if (ver == m_last_prog_version && m_active && m_active->fn && !m_active->failed
+		&& m_active->max_steps == ms && m_active->start_pc == start_pc && m_active->start_st1 == start_st1)
+	{
+		FrameFn const fn = active_fn();
+		if (!fn)
+		{
+			m_pooled_fallbacks++;
+			return finish_via_interp();
+		}
+		m_pooled_runs++;
+		fn(&dsp);
+		dsp.jit_finalize_if_idle();
+		return dsp.jit_end_frame();
+	}
 
 	// Program changed (or first frame / st1 / max_steps differ): re-hash only when the version moved,
 	// then look up the compile cache by (program hash, start_st1, max_steps).
@@ -2570,8 +2572,14 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 		// (build_pooled_order is deterministic: same program+st1 -> same (pc->ipc) indices + contents),
 		// then run the cached frame. NO asmjit codegen — the M4 reuse win.
 		build_pooled_order(dsp, start_pc, ms);
+		FrameFn const fn = active_fn();
+		if (!fn)
+		{
+			m_pooled_fallbacks++;
+			return finish_via_interp();
+		}
 		m_pooled_runs++;
-		active_fn()(&dsp);
+		fn(&dsp);
 		dsp.jit_finalize_if_idle();
 		return dsp.jit_end_frame();
 	}
@@ -2584,7 +2592,8 @@ std::array<u32, 4> Jit::run_sample_frame_pooled(tms57002_device &dsp, const std:
 	const auto result = finish_via_interp();
 	PooledEntry &e = m_pooled_cache[key];
 	e.fn = compile_frame_pooled(dsp, ms, start_pc, false);
-	if (e.fn && dsp.jit_pf4_cmem_deopt() && order_reads_cmem(dsp, m_pooled_order))
+	if (e.fn && dsp.jit_pf4_cmem_deopt() && !std::getenv("KPROP_PF4_FORCE_CMEM_COMPILE_FAIL")
+		&& order_reads_cmem(dsp, m_pooled_order))
 		e.cmem_fn = compile_frame_pooled(dsp, ms, start_pc, true);
 	e.order = m_pooled_order;
 	e.max_steps = ms;
@@ -2676,7 +2685,16 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 	const int cur_pc = dsp.jit_pc();
 	const u32 ver = dsp.jit_program_version();
 	auto active_fn = [&]() -> FrameFn {
-		return dsp.jit_cmem_pending() && m_active->cmem_fn ? m_active->cmem_fn : m_active->fn;
+		if (dsp.jit_cmem_pending())
+		{
+			if (m_active->cmem_fn)
+			{
+				m_pooled_cmem_runs++;
+				return m_active->cmem_fn;
+			}
+			return nullptr;
+		}
+		return m_active->fn;
 	};
 	// NOTE: the compiled frame runs on the scheduler's CURRENT icount (the timeslice), NOT a fresh budget —
 	// its per-PC posts decrement icount and it exits at icount<=0 (mid-frame), exactly like the
@@ -2703,8 +2721,14 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 			&& m_active->max_steps == ms
 			&& ((cur_pc - m_active->start_pc) & 0xff) < int(m_active->order.size()))
 		{
+			FrameFn const fn = active_fn();
+			if (!fn)
+			{
+				m_pooled_fallbacks++;
+				return false;
+			}
 			m_pooled_runs++;
-			active_fn()(&dsp);
+			fn(&dsp);
 			dsp.jit_finalize_if_idle();
 			m_pooled_partial = !dsp.jit_is_idle();
 			return true;
@@ -2726,8 +2750,14 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 	if (ver == m_last_prog_version && m_active && m_active->fn && !m_active->failed
 		&& m_active->max_steps == ms && m_active->start_pc == start_pc && m_active->start_st1 == start_st1)
 	{
+		FrameFn const fn = active_fn();
+		if (!fn)
+		{
+			m_pooled_fallbacks++;
+			return false;
+		}
 		m_pooled_runs++;
-		active_fn()(&dsp);
+		fn(&dsp);
 		dsp.jit_finalize_if_idle();
 		m_pooled_partial = !dsp.jit_is_idle();
 		return true;
@@ -2744,8 +2774,14 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 		// compiled frame's baked icd pointers reference the right cache.inst entries again. Deterministic +
 		// decode-only + snapshot-safe; happens once per program switch, not per frame (steady state above).
 		build_pooled_order(dsp, start_pc, ms);
+		FrameFn const fn = active_fn();
+		if (!fn)
+		{
+			m_pooled_fallbacks++;
+			return false;
+		}
 		m_pooled_runs++;
-		active_fn()(&dsp);
+		fn(&dsp);
 		dsp.jit_finalize_if_idle();
 		m_pooled_partial = !dsp.jit_is_idle();
 		return true;
@@ -2757,7 +2793,8 @@ bool Jit::run_begun_frame_pooled(tms57002_device &dsp, int max_steps)
 	build_pooled_order(dsp, start_pc, ms);
 	PooledEntry &e = m_pooled_cache[key];
 	e.fn = compile_frame_pooled(dsp, ms, start_pc, false);
-	if (e.fn && dsp.jit_pf4_cmem_deopt() && order_reads_cmem(dsp, m_pooled_order))
+	if (e.fn && dsp.jit_pf4_cmem_deopt() && !std::getenv("KPROP_PF4_FORCE_CMEM_COMPILE_FAIL")
+		&& order_reads_cmem(dsp, m_pooled_order))
 		e.cmem_fn = compile_frame_pooled(dsp, ms, start_pc, true);
 	e.order = m_pooled_order;
 	e.max_steps = ms;

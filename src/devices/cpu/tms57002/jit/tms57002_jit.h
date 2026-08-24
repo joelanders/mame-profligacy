@@ -98,6 +98,7 @@ public:
 	// (native branches) rather than silently falling back to the native frame. The DSP2/DSP3 gate asserts
 	// pooled_runs() > 0 and pooled_fallbacks() == 0 so a regression to fallback can't pass unnoticed.
 	long pooled_runs() const { return m_pooled_runs; }
+	long pooled_cmem_runs() const { return m_pooled_cmem_runs; }
 	long pooled_fallbacks() const { return m_pooled_fallbacks; }
 	long pooled_compiles() const { return m_pooled_compiles; }   // M4: distinct compiles (reuse doesn't bump)
 	bool pooled_compiled() const { return m_active != nullptr && m_active->fn != nullptr && !m_active->failed; }
@@ -160,6 +161,7 @@ private:
 	u32 m_last_prog_version = ~0u;         // last-seen device program version (cheap change detection)
 	std::uint64_t m_cur_prog_hash = 0;     // hash of the current program (recomputed only on a version change)
 	long m_pooled_runs = 0;         // frames executed via a compiled pooled frame (M3 native-branch path)
+	long m_pooled_cmem_runs = 0;    // pooled entries selecting the guarded CMEM-drain variant
 	long m_pooled_fallbacks = 0;    // frames routed to the native frame instead (fallback)
 	long m_pooled_compiles = 0;     // M4: distinct asmjit compiles done (a cache reuse does NOT bump this)
 	long m_stats_calls = 0;          // diagnostic cadence, per DSP/Jit (never shared across devices)

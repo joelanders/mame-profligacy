@@ -46,6 +46,7 @@ public:
 		u8 rptc_next = 0;
 		u8 sa = 0;
 		u8 hidx = 0;
+		std::array<u8, 4> host{};
 		u8 allow_update = 0;
 		u32 st0 = 0;
 		u32 st1 = 0;
@@ -90,6 +91,7 @@ public:
 		u8 serial_frame_flip_output = 0;
 		u8 update_counter_head = 0;
 		u8 update_counter_tail = 0;
+		u8 update_counter_count = 0;
 		u8 update_active = 0;
 		u8 update_address_run = 0;
 		std::array<u32, 256> cmem{};
@@ -153,7 +155,8 @@ public:
 	// Machine-config default for the pooled dynarec (the KPROP_DSP_PERFRAME=4 path). OFF for generic
 	// TMS57002 users; the Korg driver turns it on (gated by the 2026-07-07 F6 corpus sweep). The env
 	// still overrides at runtime: 4 = force on, any other value = force interpreter (kill switch).
-	// Non-x86-64 hosts fall back to the interpreter automatically (compile returns nullptr).
+	// The pooled backend supports x86-64 and AArch64. Other hosts fall back to
+	// the interpreter automatically (compile returns nullptr).
 	void set_dynarec_default(bool enable) { m_dynarec_default = enable; }
 	// Delay CA post-increment commit by one instruction: a c*+ read returns the
 	// current CA, but the increment only lands after the FOLLOWING instruction's
@@ -210,6 +213,8 @@ public:
 	void debug_load_program(const u32 *words, u32 count, u32 st0_value, u32 st1_value);
 	void debug_reset_live_state(bool zero_accumulators);
 	void debug_run_cycles(int max_cycles = 1);
+	long debug_pooled_run_count() const;
+	long debug_pooled_cmem_run_count() const;
 	std::array<u32, 4> debug_run_sample_frame(const std::array<u32, 4> &frame, int max_cycles = 4096);
 
 	// --- JIT harness seam (Phase 0) ------------------------------------------
@@ -352,7 +357,7 @@ public:
 	bool jit_pooled_safe() const {
 		// The deopt mode admits a frame with pending CMEM updates because every CMEM-reading
 		// pooled op guards and re-enters the interpreter until the queue drains.
-		return (update_counter_head == update_counter_tail || m_pf4_force_cmem_unsafe || m_pf4_cmem_deopt)
+		return (update_counter_count == 0 || m_pf4_force_cmem_unsafe || m_pf4_cmem_deopt)
 			&& !m_debug_cmem_force
 			&& !serial_cycle_model_enabled()
 			&& !m_debug_mpy_smhd_forward && !m_debug_lmhd_srbd_forward
@@ -372,12 +377,11 @@ public:
 	static constexpr u32 jit_s_branch_mask() { return S_BRANCH; }
 	static u32 jit_off_aacc() { return u32(__builtin_offsetof(tms57002_device, aacc)); }
 	static u32 jit_off_cmem() { return u32(__builtin_offsetof(tms57002_device, cmem)); }
-	static u32 jit_off_uc_head() { return u32(__builtin_offsetof(tms57002_device, update_counter_head)); }
-	static u32 jit_off_uc_tail() { return u32(__builtin_offsetof(tms57002_device, update_counter_tail)); }
+	static u32 jit_off_uc_count() { return u32(__builtin_offsetof(tms57002_device, update_counter_count)); }
 	static u32 jit_off_cmem_force() { return u32(__builtin_offsetof(tms57002_device, m_debug_cmem_force)); }
 	static u32 jit_off_pf4_force() { return u32(__builtin_offsetof(tms57002_device, m_pf4_force_cmem_unsafe)); }
 	bool jit_pf4_cmem_deopt() const { return m_pf4_cmem_deopt; }
-	bool jit_cmem_pending() const { return update_counter_head != update_counter_tail; }
+	bool jit_cmem_pending() const { return update_counter_count != 0; }
 	static u32 jit_off_creg() { return u32(__builtin_offsetof(tms57002_device, creg)); }   // mac/mpy write creg = get_cmem(ca)
 	static u32 jit_off_xoa() { return u32(__builtin_offsetof(tms57002_device, xoa)); }   // rde/wre XRAM offset addr
 	static u32 jit_off_xwr() { return u32(__builtin_offsetof(tms57002_device, xwr)); }   // wre XRAM write data
@@ -438,7 +442,7 @@ public:
 	u32 status_bits() const { return sti; }
 	u8 host_addr() const { return sa; }
 	u8 host_index() const { return hidx; }
-	u8 update_pending_count() const { return (update_counter_head - update_counter_tail) & 0x0f; }
+	u8 update_pending_count() const { return update_counter_count; }
 
 	void pload_w(int state);
 	void cload_w(int state);
@@ -670,7 +674,9 @@ private:
 
 	u32 update[16];
 	u8 update_sa[16];
-	u8 update_counter_head, update_counter_tail;
+	// The modulo-16 indices alone cannot distinguish an empty queue from all 16
+	// hardware update registers being occupied.
+	u8 update_counter_head, update_counter_tail, update_counter_count;
 
 	cd cache;
 
@@ -716,6 +722,7 @@ private:
 	void update_dready();
 	void update_pc0();
 	void update_empty();
+	bool host_update_register_busy() const;
 	bool update_timing_selected(u8 addr) const;
 	u32 current_cmem_view(u8 addr) const;
 

@@ -150,6 +150,22 @@ deliberately not enabled: local release benchmarking found that it prevents
 real-time operation, while the native bus-cycle correction is independent of
 that scheduler setting.
 
+## TMS57002 native EMPTY and update occupancy
+
+The fixed two-microsecond Prophecy driver pulse has been removed. Each DSP's
+native EMPTY callback now reflects both a partially filled host update register
+and queued coefficient updates. EMPTY falls at the packet-byte boundary
+corresponding to the fourth selected STRB, stays low while updates are pending,
+and remains nonempty when all 16 update registers are occupied.
+
+`cmem_update_multiword_sequence` fills and drains all 16 entries, rejects an
+illegal seventeenth word without corrupting the valid queue, restores full and
+partial host state, and exercises the count-aware interpreter and native JIT
+guards. The packet boundary is supported by the retained standalone W510 EMPTY
+corpus. The byte-level device API does not claim the within-STRB electrical
+edge, and no retained hardware case establishes silicon behavior for an
+illegal seventeenth word.
+
 Audit or install the legacy asset bundle:
 
 ```bash

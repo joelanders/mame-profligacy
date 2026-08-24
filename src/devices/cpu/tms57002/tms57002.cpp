@@ -118,6 +118,7 @@ void tms57002_device::pload_w(int state)
 			cache_flush();
 			sti &= ~(SU_MASK);
 		}
+		update_empty();
 	}
 }
 
@@ -141,6 +142,7 @@ void tms57002_device::cload_w(int state)
 			hidx = 0;
 			sti &= ~SU_CVAL;
 		}
+		update_empty();
 	}
 }
 
@@ -170,6 +172,7 @@ void tms57002_device::device_reset()
 	rptc_next = 0;
 	update_counter_tail = 0;
 	update_counter_head = 0;
+	update_counter_count = 0;
 	std::fill(std::begin(update_sa), std::end(update_sa), 0U);
 	m_update_active = false;
 	m_update_address_run = 0;
@@ -254,6 +257,12 @@ void tms57002_device::data_w(u8 data)
 		if (sti & SU_CVAL)
 		{
 			host[hidx++] = data;
+			// Silicon EMPTY falls on the fourth selected STRB of an update
+			// packet (SA plus three value bytes), one byte before enqueue.  data_w
+			// is a completed-byte API, so this preserves packet phase but cannot
+			// expose the within-strobe falling-edge phase by itself.
+			if (hidx == 3)
+				update_empty();
 			if (hidx >= 4)
 			{
 				u32 val = (host[0]<<24) | (host[1]<<16) | (host[2]<<8) | host[3];
@@ -263,15 +272,27 @@ void tms57002_device::data_w(u8 data)
 				}
 				else
 				{
-					update_sa[update_counter_head] = sa;
-					m_update_address_run_for_entry[update_counter_head] = m_update_address_run;
-					update[update_counter_head] = val;
-					m_update_enqueue_su[update_counter_head] = m_sound_updates;
-					m_update_read_delay_seen[update_counter_head] = 0;
-					update_counter_head = (update_counter_head + 1) & 0x0f;
-					update_empty();
+					if (update_counter_count < 16)
+					{
+						update_sa[update_counter_head] = sa;
+						m_update_address_run_for_entry[update_counter_head] = m_update_address_run;
+						update[update_counter_head] = val;
+						m_update_enqueue_su[update_counter_head] = m_sound_updates;
+						m_update_read_delay_seen[update_counter_head] = 0;
+						update_counter_head = (update_counter_head + 1) & 0x0f;
+						update_counter_count++;
+					}
+					else
+					{
+						// EMPTY remains low while all 16 hardware update registers are
+						// occupied.  Silicon behavior for an illegal seventeenth word is
+						// not captured; preserve the valid queued words rather than aliasing
+						// the queue to empty or overwriting its oldest entry.
+						logerror("TMS57002 update-register overflow, dropping SA=%02X VAL=%08X\n", sa, val);
+					}
 				}
 				hidx = 0;
+				update_empty();
 			}
 		}
 		else
@@ -348,17 +369,24 @@ void tms57002_device::update_pc0()
 
 int tms57002_device::empty_r()
 {
-	return (update_counter_head == update_counter_tail);
+	return update_counter_count == 0 && !host_update_register_busy();
 }
 
 void tms57002_device::update_empty()
 {
-	const int state = (update_counter_head == update_counter_tail) ? 1 : 0;
+	const int state = empty_r();
 	if (state != m_empty_line)
 	{
 		m_empty_line = state;
 		m_empty_callback(state);
 	}
+}
+
+bool tms57002_device::host_update_register_busy() const
+{
+	return (sti & (IN_PLOAD | IN_CLOAD)) == IN_CLOAD
+		&& (sti & SU_CVAL)
+		&& hidx >= 3;
 }
 
 bool tms57002_device::serial_cycle_model_enabled() const
@@ -1449,6 +1477,7 @@ tms57002_device::debug_macc_eval_result tms57002_device::debug_eval_macc_output(
 void tms57002_device::debug_load_program(const u32 *words, u32 count, u32 st0_value, u32 st1_value)
 {
 	device_reset();
+	m_program_version++;   // Direct harness reload, equivalent to a PLOAD program-image change.
 
 	for (u32 addr = 0; addr < 0x100; addr++)
 		program->write_dword(addr, 0);
@@ -1483,6 +1512,16 @@ void tms57002_device::debug_run_cycles(int max_cycles)
 {
 	icount = std::max(max_cycles, 1);
 	execute_run();
+}
+
+long tms57002_device::debug_pooled_run_count() const
+{
+	return m_jit ? m_jit->pooled_runs() : 0;
+}
+
+long tms57002_device::debug_pooled_cmem_run_count() const
+{
+	return m_jit ? m_jit->pooled_cmem_runs() : 0;
 }
 
 std::array<u32, 4> tms57002_device::debug_run_sample_frame(const std::array<u32, 4> &frame, int max_cycles)
@@ -1733,6 +1772,7 @@ tms57002_device::debug_snapshot tms57002_device::debug_capture_snapshot() const
 	snapshot.rptc_next = rptc_next;
 	snapshot.sa = sa;
 	snapshot.hidx = hidx;
+	std::copy(std::begin(host), std::end(host), snapshot.host.begin());
 	snapshot.allow_update = allow_update;
 	snapshot.st0 = st0;
 	snapshot.st1 = st1;
@@ -1777,6 +1817,7 @@ tms57002_device::debug_snapshot tms57002_device::debug_capture_snapshot() const
 	snapshot.serial_frame_flip_output = u8(m_serial_frame_flip_output);
 	snapshot.update_counter_head = update_counter_head;
 	snapshot.update_counter_tail = update_counter_tail;
+	snapshot.update_counter_count = update_counter_count;
 	snapshot.update_active = u8(m_update_active);
 	snapshot.update_address_run = m_update_address_run;
 	std::copy(std::begin(cmem), std::end(cmem), snapshot.cmem.begin());
@@ -1803,6 +1844,7 @@ void tms57002_device::debug_restore_snapshot(const debug_snapshot &snapshot)
 	rptc_next = snapshot.rptc_next;
 	sa = snapshot.sa;
 	hidx = snapshot.hidx;
+	std::copy(snapshot.host.begin(), snapshot.host.end(), std::begin(host));
 	allow_update = snapshot.allow_update;
 	st0 = snapshot.st0;
 	st1 = snapshot.st1;
@@ -1847,6 +1889,7 @@ void tms57002_device::debug_restore_snapshot(const debug_snapshot &snapshot)
 	m_serial_frame_flip_output = bool(snapshot.serial_frame_flip_output);
 	update_counter_head = snapshot.update_counter_head;
 	update_counter_tail = snapshot.update_counter_tail;
+	update_counter_count = snapshot.update_counter_count;
 	m_update_active = bool(snapshot.update_active);
 	m_update_address_run = snapshot.update_address_run;
 	std::copy(snapshot.cmem.begin(), snapshot.cmem.end(), std::begin(cmem));
@@ -1889,7 +1932,7 @@ void tms57002_device::debug_begin_sample_frame(const std::array<u32, 4> &frame)
 
 u32 tms57002_device::get_cmem(u8 addr)
 {
-	const bool update_pending = update_counter_head != update_counter_tail;
+	const bool update_pending = update_counter_count != 0;
 	if (update_pending && (sti & IN_CLOAD))
 	{
 		sti &= ~S_UPDATE;
@@ -1931,9 +1974,10 @@ u32 tms57002_device::get_cmem(u8 addr)
 		const u8 consumed_update_run = m_update_address_run_for_entry[update_counter_tail];
 		write_cmem_direct(addr, update[update_counter_tail], "HOST_APPLY");
 		update_counter_tail = (update_counter_tail + 1) & 0x0f;
+		update_counter_count--;
 		update_empty();
 
-		if (update_counter_head == update_counter_tail)
+		if (update_counter_count == 0)
 		{
 			m_update_active = false;
 			sti &= ~S_UPDATE;
@@ -2160,8 +2204,8 @@ void tms57002_device::execute_run()
 		// Selection: the machine-config default (set_dynarec_default — ON for the Korg Prophecy,
 		// gated by the 2026-07-07 F6 corpus sweep, byte-identical across 36 programs; OFF for
 		// generic TMS57002 users), overridden by KPROP_DSP_PERFRAME: 4 = force on, any other
-		// value = force interpreter (the kill switch). Non-x86-64 hosts fall back to the
-		// interpreter automatically (compile returns nullptr -> programs run interpreted).
+			// value = force interpreter (the kill switch). x86-64 and AArch64 use native
+			// backends; other hosts fall back when compilation returns nullptr.
 		{
 			static const int pf_env = [] {
 				const char *e = std::getenv("KPROP_DSP_PERFRAME");
@@ -2499,6 +2543,7 @@ void tms57002_device::device_start()
 
 	save_item(NAME(update_counter_head));
 	save_item(NAME(update_counter_tail));
+	save_item(NAME(update_counter_count));
 	save_item(NAME(allow_update));
 }
 
