@@ -133,10 +133,17 @@ macro jsr32 %opc %spreg
 	} else {
 		m_PC = read16i(0);
 	}
+	m_icount -= reset_processing_cycles();
 	update_irq_filter();
 	prefetch_noirq
 
 10001 irq o
+	m_icount -= interrupt_priority_cycles();
+	interrupt_priority_complete();
+# Figure 5-7's post-accept fetch is distinct from the pipelined return-address fetch.
+	if(interrupt_post_accept_prefetch()) {
+		fetch
+	}
 	internal(1);
 	m_TMP1 = r16_r(7) - 2;
 	r16_w(7, m_TMP1);
@@ -144,15 +151,20 @@ macro jsr32 %opc %spreg
 	m_TMP1 = r16_r(7) - 2;
 	r16_w(7, m_TMP1);
 	write16(m_TMP1, (m_CCR << 8) | ((m_PC >> 16) & 0xff));
+	irq_setup();
+	update_irq_filter();
 	debugger_exception_hook(m_taken_irq_vector);
 	m_PC = read16i(2*m_taken_irq_vector);
 	internal(1);
-	irq_setup();
-	update_irq_filter();
 	interrupt_taken();
 	prefetch_noirq
 
 10001 irq h
+	m_icount -= interrupt_priority_cycles();
+	interrupt_priority_complete();
+	if(interrupt_post_accept_prefetch()) {
+		fetch
+	}
 	internal(1);
 	m_TMP1 = r32_r(7) - 2;
 	r32_w(7, m_TMP1);
@@ -165,6 +177,8 @@ macro jsr32 %opc %spreg
 		r32_w(7, m_TMP1);
 		write16(m_TMP1, m_EXR << 8);
 	}
+	irq_setup();
+	update_irq_filter();
 	debugger_exception_hook(m_taken_irq_vector);
 	if(m_mode_advanced) {
 		m_IR[0] = read16i(4*m_taken_irq_vector);
@@ -174,8 +188,6 @@ macro jsr32 %opc %spreg
 		m_PC = read16i(2*m_taken_irq_vector);
 	}
 	internal(1);
-	irq_setup();
-	update_irq_filter();
 	interrupt_taken();
 	prefetch_noirq
 
@@ -204,6 +216,7 @@ macro jsr32 %opc %spreg
 
 10003 dma
 	m_TMP2 = m_current_dma;
+	begin_dma_bus_cycle(m_TMP2);
 	if(m_dma_channel[m_TMP2]->m_flags & h8_dma_state::MODE_16) {
 		m_TMP1 = read16(m_dma_channel[m_TMP2]->m_source);
 		if(m_dma_channel[m_TMP2]->m_count == 1 && !(m_dma_channel[m_TMP2]->m_flags & (h8_dma_state::BLOCK|h8_dma_state::REPEAT)))

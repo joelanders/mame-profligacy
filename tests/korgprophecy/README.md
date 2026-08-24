@@ -112,6 +112,28 @@ V55-to-H8 and approximately 32 kbaud H8-to-V55 configuration. Static checks
 ensure every UART timer uses the appropriate transmit or receive divider and
 that the retired fixed-rate and stop-edge workaround cannot reappear.
 
+## H8/3003 external-bus timing
+
+Run the ROM-free production-source regressions:
+
+```bash
+python3 tests/korgprophecy/h83003_external_bus_timing_test.py
+python3 tests/korgprophecy/h83003_intc_state_test.py
+```
+
+The first test extracts and executes the production H8/3003 reset,
+bus-control, memory-access, interrupt-entry, and retry/refund paths. It covers
+the mode-2 Prophecy strap, external areas 0/2/6, 8- and 16-bit transfers, wait
+states, and the observed six-cycle host-write cadence. The second test covers
+IPRA/IPRB byte writes and instruction-boundary IRQ flag/enable behavior.
+
+The Prophecy enables native H8 external-bus timing by default.
+`KPROP_H8_DISABLE_NATIVE_BUS_TIMING=1` remains a diagnostic ablation control;
+it is not an alternate shipping mode. A perfect H8 scheduler quantum is
+deliberately not enabled: local release benchmarking found that it prevents
+real-time operation, while the native bus-cycle correction is independent of
+that scheduler setting.
+
 Audit or install the legacy asset bundle:
 
 ```bash

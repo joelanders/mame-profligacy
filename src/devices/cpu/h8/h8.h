@@ -195,6 +195,7 @@ protected:
 	h8_dtc_device *m_dtc_device;
 	h8_dma_state *m_dma_channel[8];
 	int m_current_dma;
+	int m_dma_bus_owner;
 	h8_dtc_state *m_current_dtc;
 	u64 m_cycles_base;
 
@@ -215,7 +216,7 @@ protected:
 	bool m_has_hc; // GT913's CCR bit 5 is I, not H
 
 	int m_inst_state, m_inst_substate, m_requested_state;
-	int m_icount, m_bcount, m_count_before_instruction_step;
+	int m_icount, m_bcount, m_count_before_instruction_step, m_last_memory_access_cycles;
 	int m_irq_vector, m_taken_irq_vector;
 	int m_irq_level, m_taken_irq_level;
 	bool m_irq_nmi, m_standby_pending;
@@ -235,6 +236,17 @@ protected:
 	virtual int trace_setup();
 	virtual int trapa_setup();
 	virtual void irq_setup() = 0;
+	virtual int reset_processing_cycles() const;
+	virtual int interrupt_priority_cycles() const;
+	virtual void interrupt_priority_complete();
+	virtual bool interrupt_post_accept_prefetch() const;
+	virtual bool internal_phase_checkpointing_enabled() const;
+	virtual void interrupt_instruction_boundary();
+	virtual int dma_bus_acquisition_cycles(int channel) const;
+	virtual int memory_access_cycles(u32 address, int size) const;
+	void begin_dma_bus_cycle(int channel);
+	void charge_memory_access(u32 address, int size);
+	void refund_memory_access();
 
 	u16 read16i(u32 adr);
 	u8 read8(u32 adr);

@@ -40,6 +40,7 @@ h8_device::h8_device(const machine_config &mconfig, device_type type, const char
 	m_standby_cb(*this),
 	m_PPC(0), m_NPC(0), m_PC(0), m_PIR(0), m_EXR(0), m_CCR(0), m_MAC(0), m_MACF(0),
 	m_TMP1(0), m_TMP2(0), m_TMPR(0), m_inst_state(0), m_inst_substate(0), m_icount(0), m_bcount(0),
+	m_last_memory_access_cycles(0),
 	m_irq_vector(0), m_taken_irq_vector(0), m_irq_level(0), m_taken_irq_level(0), m_irq_nmi(false),
 	m_standby_pending(false), m_standby_time(0), m_nvram_defval(0), m_nvram_battery(true)
 {
@@ -147,6 +148,7 @@ void h8_device::device_start()
 	}
 
 	save_item(NAME(m_current_dma));
+	save_item(NAME(m_dma_bus_owner));
 	save_item(NAME(m_cycles_base));
 
 	save_item(NAME(m_PPC));
@@ -168,6 +170,7 @@ void h8_device::device_start()
 	save_item(NAME(m_requested_state));
 	save_item(NAME(m_bcount));
 	save_item(NAME(m_count_before_instruction_step));
+	save_item(NAME(m_last_memory_access_cycles));
 	save_item(NAME(m_irq_vector));
 	save_item(NAME(m_taken_irq_vector));
 	save_item(NAME(m_irq_level));
@@ -192,8 +195,10 @@ void h8_device::device_start()
 	m_inst_substate = 0;
 	m_count_before_instruction_step = 0;
 	m_requested_state = -1;
+	m_last_memory_access_cycles = 0;
 	m_dma_device = nullptr;
 	m_dtc_device = nullptr;
+	m_dma_bus_owner = -1;
 
 	memset(m_dma_channel, 0, sizeof(m_dma_channel));
 }
@@ -205,6 +210,7 @@ void h8_device::device_reset()
 	m_inst_substate = 0;
 	m_count_before_instruction_step = 0;
 	m_requested_state = -1;
+	m_last_memory_access_cycles = 0;
 
 	m_irq_vector = 0;
 	m_irq_level = -1;
@@ -212,6 +218,7 @@ void h8_device::device_reset()
 	m_taken_irq_vector = 0;
 	m_taken_irq_level = -1;
 	m_current_dma = -1;
+	m_dma_bus_owner = -1;
 	m_current_dtc = nullptr;
 
 	m_standby_pending = false;
@@ -484,51 +491,110 @@ void h8_device::state_string_export(const device_state_entry &entry, std::string
 	}
 }
 
-// FIXME: one-state bus cycles are only provided for on-chip ROM & RAM in H8S/2000 and H8S/2600.
-// All other accesses take *at least* two states each, and additional wait states are often programmed for external memory!
+int h8_device::memory_access_cycles(u32 address, int size) const
+{
+	// H8S devices can complete accesses to their on-chip ROM/RAM in one state.
+	// H8/300-family devices take at least two states.  Parts with an external
+	// bus controller override this to account for area width and wait states.
+	return m_has_exr ? 1 : 2;
+}
+
+int h8_device::interrupt_priority_cycles() const
+{
+	// Existing H8 cores already model their internal exception-processing
+	// phases in the generated IRQ sequence.  Devices with a separately
+	// documented priority-decision phase override this hook.
+	return 0;
+}
+
+void h8_device::interrupt_priority_complete()
+{
+	// Most H8 cores treat the vector selected at the instruction boundary as
+	// final.  Parts with a separately timed priority-decision phase can replace
+	// that tentative winner when a better request arrives during the phase.
+}
+
+bool h8_device::interrupt_post_accept_prefetch() const
+{
+	// Preserve established timing on devices whose exception bus sequence has
+	// not been verified against a hardware manual.
+	return false;
+}
+
+bool h8_device::internal_phase_checkpointing_enabled() const
+{
+	// Mid-instruction event checkpoints can change device interleave even when
+	// the instruction's total cycle count is unchanged.  Keep the established
+	// instruction-boundary behavior unless a device explicitly opts in.
+	return false;
+}
+
+void h8_device::interrupt_instruction_boundary()
+{
+}
+
+int h8_device::reset_processing_cycles() const
+{
+	// Reset timing varies by family.  Opt in from a device whose hardware
+	// manual documents a separate post-vector internal-processing phase.
+	return 0;
+}
+
+int h8_device::dma_bus_acquisition_cycles(int) const
+{
+	// Bus handoff timing varies by family.  Devices with a documented dead
+	// state between CPU ownership and the first DMAC read opt in here.
+	return 0;
+}
+
+void h8_device::begin_dma_bus_cycle(int channel)
+{
+	const int acquisition_cycles = dma_bus_acquisition_cycles(channel);
+	if(acquisition_cycles && m_dma_bus_owner != channel) {
+		m_icount -= acquisition_cycles;
+		m_dma_bus_owner = channel;
+	} else if(!acquisition_cycles)
+		m_dma_bus_owner = -1;
+}
+
+void h8_device::charge_memory_access(u32 address, int size)
+{
+	m_last_memory_access_cycles = memory_access_cycles(address, size);
+	m_icount -= m_last_memory_access_cycles;
+}
+
+void h8_device::refund_memory_access()
+{
+	m_icount += m_last_memory_access_cycles;
+}
 
 u16 h8_device::read16i(u32 adr)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 2);
 	return m_cache.read_word(adr & ~1);
 }
 
 u8 h8_device::read8(u32 adr)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 1);
 	return m_program.read_byte(adr);
 }
 
 void h8_device::write8(u32 adr, u8 data)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 1);
 	m_program.write_byte(adr, data);
 }
 
 u16 h8_device::read16(u32 adr)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 2);
 	return m_program.read_word(adr & ~1);
 }
 
 void h8_device::write16(u32 adr, u16 data)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 2);
 	m_program.write_word(adr & ~1, data);
 }
 
@@ -559,6 +625,19 @@ void h8_device::prefetch_done()
 		m_inst_state = STATE_TRACE;
 	else
 		m_inst_state = m_IR[0] = m_PIR;
+
+	// Some H8 interrupt controllers keep an enable/flag clear from taking
+	// effect for arbitration until the instruction performing the write has
+	// completed.  The selected vector has already been snapshotted above.
+	interrupt_instruction_boundary();
+
+	if(m_inst_state != STATE_DMA) {
+		// The ownership tracker itself has no timed release phase.  H8/3003
+		// hardware manual ADE-602-055A figures 8-13 and 8-15 put Td before
+		// DMAC acquisition and begin the following CPU cycle immediately after
+		// the final DMAC write.
+		m_dma_bus_owner = -1;
+	}
 }
 
 void h8_device::prefetch_done_noirq()
@@ -567,6 +646,7 @@ void h8_device::prefetch_done_noirq()
 		m_inst_state = STATE_TRACE;
 	else
 		m_inst_state = m_IR[0] = m_PIR;
+	interrupt_instruction_boundary();
 }
 
 void h8_device::prefetch_done_notrace()
@@ -579,6 +659,7 @@ void h8_device::prefetch_done_notrace()
 void h8_device::prefetch_done_noirq_notrace()
 {
 	m_inst_state = m_IR[0] = m_PIR;
+	interrupt_instruction_boundary();
 }
 
 void h8_device::set_irq(int irq_vector, int irq_level, bool irq_nmi)
