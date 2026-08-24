@@ -30,8 +30,15 @@ h83003_device::h83003_device(const machine_config &mconfig, const char *tag, dev
 	m_timer16_3(*this, "timer16:3"),
 	m_timer16_4(*this, "timer16:4"),
 	m_watchdog(*this, "watchdog"),
+	m_ram_view(*this, "ram_view"),
 	m_tend_cb(*this),
-	m_syscr(0)
+	m_syscr(0),
+	m_rtmcsr(0),
+	m_abwcr(0xff),
+	m_astcr(0xff),
+	m_wcr(0xf3),
+	m_wcer(0xff),
+	m_brcr(0xfe)
 {
 }
 
@@ -39,7 +46,8 @@ void h83003_device::map(address_map &map)
 {
 	const offs_t base = m_mode_a20 ? 0xf0000 : 0xff0000;
 
-	map(base | 0xfd10, base | 0xff0f).ram();
+	map(base | 0xfd10, base | 0xff0f).view(m_ram_view);
+	m_ram_view[0](base | 0xfd10, base | 0xff0f).ram().share(m_internal_ram);
 
 	map(base | 0xff20, base | 0xff21).rw(m_dma0, FUNC(h8h_dma_channel_device::marah_r), FUNC(h8h_dma_channel_device::marah_w));
 	map(base | 0xff22, base | 0xff23).rw(m_dma0, FUNC(h8h_dma_channel_device::maral_r), FUNC(h8h_dma_channel_device::maral_w));
@@ -154,8 +162,14 @@ void h83003_device::map(address_map &map)
 	map(base | 0xffe0, base | 0xffe7).r(m_adc, FUNC(h8_adc_device::addr8_r));
 	map(base | 0xffe8, base | 0xffe8).rw(m_adc, FUNC(h8_adc_device::adcsr_r), FUNC(h8_adc_device::adcsr_w));
 	map(base | 0xffe9, base | 0xffe9).rw(m_adc, FUNC(h8_adc_device::adcr_r), FUNC(h8_adc_device::adcr_w));
+	map(base | 0xffec, base | 0xffec).rw(FUNC(h83003_device::abwcr_r), FUNC(h83003_device::abwcr_w));
+	map(base | 0xffed, base | 0xffed).rw(FUNC(h83003_device::astcr_r), FUNC(h83003_device::astcr_w));
+	map(base | 0xffee, base | 0xffee).rw(FUNC(h83003_device::wcr_r), FUNC(h83003_device::wcr_w));
+	map(base | 0xffef, base | 0xffef).rw(FUNC(h83003_device::wcer_r), FUNC(h83003_device::wcer_w));
 
+	map(base | 0xfff1, base | 0xfff1).r(FUNC(h83003_device::mdcr_r));
 	map(base | 0xfff2, base | 0xfff2).rw(FUNC(h83003_device::syscr_r), FUNC(h83003_device::syscr_w));
+	map(base | 0xfff3, base | 0xfff3).rw(FUNC(h83003_device::brcr_r), FUNC(h83003_device::brcr_w));
 	map(base | 0xfff4, base | 0xfff4).rw(m_intc, FUNC(h8h_intc_device::iscr_r), FUNC(h8h_intc_device::iscr_w));
 	map(base | 0xfff5, base | 0xfff5).rw(m_intc, FUNC(h8h_intc_device::ier_r), FUNC(h8h_intc_device::ier_w));
 	map(base | 0xfff6, base | 0xfff6).rw(m_intc, FUNC(h8h_intc_device::isr_r), FUNC(h8h_intc_device::isr_w));
@@ -165,6 +179,7 @@ void h83003_device::map(address_map &map)
 void h83003_device::device_add_mconfig(machine_config &config)
 {
 	H8H_INTC(config, m_intc, *this);
+	m_intc->set_instruction_boundary_clear(true);
 	H8_ADC_3337(config, m_adc, *this, m_intc, 60);
 	H8H_DMA(config, m_dma, *this);
 	H8H_DMA_CHANNEL(config, m_dma0, *this, m_dma, m_intc, false, false);
@@ -280,14 +295,158 @@ void h83003_device::device_start()
 
 	save_item(NAME(m_syscr));
 	save_item(NAME(m_rtmcsr));
+	save_item(NAME(m_abwcr));
+	save_item(NAME(m_astcr));
+	save_item(NAME(m_wcr));
+	save_item(NAME(m_wcer));
+	save_item(NAME(m_brcr));
 }
 
 void h83003_device::device_reset()
 {
 	h8h_device::device_reset();
-	m_syscr = 0x09;
+	m_syscr = 0x0b;
 	m_rtmcsr = 0x00;
+	m_ram_view.select(0);
+	// The mode pins select the external bus width used at reset.
+	m_abwcr = m_initial_bus_16bit ? 0x00 : 0xff;
+	m_astcr = 0xff;
+	m_wcr = 0xf3;
+	m_wcer = 0xff;
+	m_brcr = 0xfe;
 }
+
+int h83003_device::reset_processing_cycles() const
+{
+	// Hardware manual figure 4-3: internal processing occurs after the
+	// reset-vector fetch and before the first instruction prefetch.  Preserve
+	// established timing for drivers that have not opted into native bus timing.
+	return m_external_bus_timing ? 2 : h8h_device::reset_processing_cycles();
+}
+
+int h83003_device::interrupt_priority_cycles() const
+{
+	// IRQ0-IRQ7 occupy vectors 12-19.  The H8/3003 needs two states
+	// to arbitrate external interrupts, but only one for internal sources.
+	return m_external_bus_timing
+		? (m_taken_irq_vector >= 20 ? 1 : 2)
+		: h8h_device::interrupt_priority_cycles();
+}
+
+void h83003_device::interrupt_priority_complete()
+{
+	if (!m_external_bus_timing || !m_irq_vector)
+		return;
+
+	// The vector captured at the instruction boundary is tentative until the
+	// H8/3003 priority-decision phase ends.  A request that becomes eligible in
+	// that one- or two-state window wins only when it has a strictly higher
+	// priority, or the same priority and the lower nonzero vector number.
+	if ((m_irq_level > m_taken_irq_level) ||
+		((m_irq_level == m_taken_irq_level) && (m_irq_vector < m_taken_irq_vector)))
+	{
+		m_taken_irq_vector = m_irq_vector;
+		m_taken_irq_level = m_irq_level;
+	}
+}
+
+bool h83003_device::interrupt_post_accept_prefetch() const
+{
+	// Hardware manual figure 5-7 shows a post-accept fetch whose result is
+	// discarded before the first internal exception-processing phase.
+	return m_external_bus_timing;
+}
+
+bool h83003_device::internal_phase_checkpointing_enabled() const
+{
+	return m_external_bus_timing;
+}
+
+void h83003_device::interrupt_instruction_boundary()
+{
+	m_intc->instruction_boundary();
+}
+
+int h83003_device::dma_bus_acquisition_cycles(int channel) const
+{
+	// Hardware manual ADE-602-055A section 8.4.8, figure 8-15 (printed page
+	// 218): one dead state follows CPU-to-DMAC bus acquisition in auto-request
+	// burst mode.  The burst then retains the bus for that channel's back-to-back
+	// transfers.  A different burst channel must arbitrate again and therefore
+	// incurs its own Td.  The figure shows no second Td when the completed burst
+	// returns the bus to the CPU; that transition only clears ownership
+	// bookkeeping.
+	// Other DMA modes keep their pre-existing core timing until their required
+	// CPU/DMAC interleave is modeled explicitly.
+	return m_external_bus_timing
+		&& channel >= 0 && channel < 8
+		&& m_dma_channel[channel]
+		&& m_dma_channel[channel]->m_trigger_vector == h8gen_dma_channel_device::AUTOREQ_B
+		? 1 : 0;
+}
+
+int h83003_device::memory_access_cycles(u32 address, int size) const
+{
+	if (!m_external_bus_timing)
+		return h8h_device::memory_access_cycles(address, size);
+
+	address &= m_mode_a20 ? 0x0fffff : 0xffffff;
+	const u32 ram_start = m_mode_a20 ? 0x0ffd10 : 0xfffd10;
+	const u32 ram_end = m_mode_a20 ? 0x0fff0f : 0xffff0f;
+	const u32 register_start = m_mode_a20 ? 0x0fff1c : 0xffff1c;
+	if (BIT(m_syscr, 0) && address >= ram_start && address <= ram_end)
+		return 2;
+	if (address >= register_start)
+	{
+		// Appendix B.1 marks only these five ITU ranges as 16-bit registers.
+		// Appendix A, table A-2 gives a word six states on the other 8-bit
+		// supporting-module buses, versus three states on a 16-bit bus.
+		const u8 aligned_offset = address & 0xfe;
+		const bool bus_16bit = (aligned_offset >= 0x68 && aligned_offset <= 0x6d)
+			|| (aligned_offset >= 0x72 && aligned_offset <= 0x77)
+			|| (aligned_offset >= 0x7c && aligned_offset <= 0x81)
+			|| (aligned_offset >= 0x86 && aligned_offset <= 0x8f)
+			|| (aligned_offset >= 0x96 && aligned_offset <= 0x9f);
+		return size == 2 && !bus_16bit ? 6 : 3;
+	}
+
+	const unsigned area_shift = m_mode_a20 ? 17 : 21;
+	const unsigned area = (address >> area_shift) & 7;
+	int states = BIT(m_astcr, area) ? 3 : 2;
+
+	if (states == 3 && BIT(m_wcer, area))
+	{
+		const unsigned wait_mode = (m_wcr >> 2) & 3;
+		// Programmable-wait and pin-wait mode 1 always insert WC states.
+		// Pin WAIT extension is not modeled; an inactive/high pin adds none.
+		if (wait_mode == 0 || wait_mode == 2)
+			states += m_wcr & 3;
+	}
+
+	if (size == 2 && BIT(m_abwcr, area))
+		states *= 2;
+	return states;
+}
+
+u8 h83003_device::abwcr_r() { return m_abwcr; }
+void h83003_device::abwcr_w(u8 data) { m_abwcr = data; }
+u8 h83003_device::astcr_r() { return m_astcr; }
+void h83003_device::astcr_w(u8 data) { m_astcr = data; }
+u8 h83003_device::wcr_r() { return m_wcr; }
+void h83003_device::wcr_w(u8 data) { m_wcr = 0xf0 | (data & 0x0f); }
+u8 h83003_device::wcer_r() { return m_wcer; }
+void h83003_device::wcer_w(u8 data) { m_wcer = data; }
+
+u8 h83003_device::mdcr_r()
+{
+	// Modes 1/2 use the 20-bit address space and modes 3/4 use 24 bits;
+	// the even-numbered mode in each pair starts with a 16-bit bus.
+	const u8 mode = (m_mode_a20 ? 1 : 3) + (m_initial_bus_16bit ? 1 : 0);
+	return 0xc0 | mode;
+}
+
+u8 h83003_device::brcr_r() { return m_brcr; }
+void h83003_device::brcr_w(u8 data) { m_brcr = 0xfe | (data & 0x01); }
 
 u8 h83003_device::syscr_r()
 {
@@ -296,7 +455,13 @@ u8 h83003_device::syscr_r()
 
 void h83003_device::syscr_w(u8 data)
 {
-	m_syscr = data;
+	if (BIT(data, 0))
+		m_ram_view.select(0);
+	else
+		m_ram_view.disable();
+	m_intc->set_nmi_edge(BIT(data, 2));
+	m_standby_pending = BIT(data, 7);
+	m_syscr = data | 0x02;
 	update_irq_filter();
 	logerror("syscr = %02x\n", data);
 }

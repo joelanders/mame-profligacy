@@ -29,9 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Six publication commits plus the pinned upstream parent are enough
-          # for the topology audit; avoid cloning MAME's complete history.
-          fetch-depth: 16
+          # Include the pinned upstream and public-history bases required by
+          # the topology audit without cloning MAME's complete history.
+          fetch-depth: 32
           # The publication audit requires the linear public history. GitHub's
           # pull_request default is a synthetic merge commit, so validate the
           # proposed branch tip explicitly while retaining github.sha on push.
@@ -60,7 +60,7 @@ jobs:
           install: git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-x86_64-libc++ mingw-w64-ucrt-x86_64-sdl3
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 16
+          fetch-depth: 32
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Build and run public gates
         env:

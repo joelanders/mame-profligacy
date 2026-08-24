@@ -51,14 +51,26 @@ public:
 	auto read_portc()  { return m_read_port [PORT_C].bind(); }
 	auto write_portc() { return m_write_port[PORT_C].bind(); }
 
-	void set_mode_a20() { m_mode_a20 = true; }
-	void set_mode_a24() { m_mode_a20 = false; }
+	void set_mode_a20(bool initial_bus_16bit = false) { m_mode_a20 = true; m_initial_bus_16bit = initial_bus_16bit; }
+	void set_mode_a24(bool initial_bus_16bit = false) { m_mode_a20 = false; m_initial_bus_16bit = initial_bus_16bit; }
+	void set_external_bus_timing(bool enable) { m_external_bus_timing = enable; }
 
 	u8 syscr_r();
 	void syscr_w(u8 data);
 
 	u8 rtmcsr_r();
 	void rtmcsr_w(u8 data);
+	u8 abwcr_r();
+	void abwcr_w(u8 data);
+	u8 astcr_r();
+	void astcr_w(u8 data);
+	u8 wcr_r();
+	void wcr_w(u8 data);
+	u8 wcer_r();
+	void wcer_w(u8 data);
+	u8 mdcr_r();
+	u8 brcr_r();
+	void brcr_w(u8 data);
 
 protected:
 	required_device<h8h_intc_device> m_intc;
@@ -84,11 +96,19 @@ protected:
 	required_device<h8h_timer16_channel_device> m_timer16_3;
 	required_device<h8h_timer16_channel_device> m_timer16_4;
 	required_device<h8_watchdog_device> m_watchdog;
+	memory_view m_ram_view;
 
 	devcb_write_line::array<4> m_tend_cb;
 
 	u8 m_syscr;
 	u8 m_rtmcsr;
+	u8 m_abwcr;
+	u8 m_astcr;
+	u8 m_wcr;
+	u8 m_wcer;
+	u8 m_brcr;
+	bool m_initial_bus_16bit = false;
+	bool m_external_bus_timing = false;
 
 	virtual void update_irq_filter() override;
 	virtual void interrupt_taken() override;
@@ -97,6 +117,14 @@ protected:
 	virtual void internal_update(u64 current_time) override;
 	using h8_device::internal_update;
 	virtual void notify_standby(int state) override;
+	virtual int reset_processing_cycles() const override;
+	virtual int interrupt_priority_cycles() const override;
+	virtual void interrupt_priority_complete() override;
+	virtual bool interrupt_post_accept_prefetch() const override;
+	virtual bool internal_phase_checkpointing_enabled() const override;
+	virtual void interrupt_instruction_boundary() override;
+	virtual int dma_bus_acquisition_cycles(int channel) const override;
+	virtual int memory_access_cycles(u32 address, int size) const override;
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
 	void map(address_map &map) ATTR_COLD;
 

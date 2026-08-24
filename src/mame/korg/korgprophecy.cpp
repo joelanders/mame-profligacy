@@ -417,8 +417,6 @@ private:
 	u32 h8_nocycle_r32(u32 addr);
 	u8 h8_dsp_r8(offs_t offset);
 	void h8_dsp_w8(offs_t offset, u8 data);
-	u16 h8_busctrl_r(offs_t offset, u16 mem_mask = ~0);
-	void h8_busctrl_w(offs_t offset, u16 data, u16 mem_mask = ~0);
 
 	u16 io_r(offs_t offset, u16 mem_mask = ~0);
 	void io_w(offs_t offset, u16 data, u16 mem_mask = ~0);
@@ -667,7 +665,6 @@ private:
 	u8 m_v55_txd1_decode_byte = 0x00;
 	u8 m_v55_txd1_decode_bit = 0x00;
 	std::vector<u8> m_midi_tx_sysex;
-	std::array<u8, 4> m_h8_busctrl{ 0xff, 0xff, 0xff, 0xff };
 	u8 m_dsp_pload_level = 1;
 		u8 m_dsp_empty = 0x07;
 	std::array<emu_timer *, 3> m_dsp_empty_timer{};
@@ -954,7 +951,6 @@ void korgprophecy_state::machine_start()
 	save_item(NAME(m_v55_txd1_decode_active));
 	save_item(NAME(m_v55_txd1_decode_byte));
 	save_item(NAME(m_v55_txd1_decode_bit));
-	save_item(NAME(m_h8_busctrl));
 	save_item(NAME(m_dsp_pload_level));
 	save_item(NAME(m_dsp_empty));
 	save_item(NAME(m_card_present));
@@ -3816,22 +3812,6 @@ void korgprophecy_state::h8_dsp_w8(offs_t offset, u8 data)
 			m_dsp_empty_timer[dsp]->adjust(attotime::from_usec(m_dsp_empty_hold_us), dsp);
 	}
 }
-u16 korgprophecy_state::h8_busctrl_r(offs_t offset, u16 mem_mask)
-{
-	const u8 reg = (offset & 1) << 1;
-	return (u16(m_h8_busctrl[reg]) << 8) | m_h8_busctrl[reg + 1];
-}
-
-void korgprophecy_state::h8_busctrl_w(offs_t offset, u16 data, u16 mem_mask)
-{
-	const u8 reg = (offset & 1) << 1;
-	if (mem_mask & 0xff00)
-		m_h8_busctrl[reg] = (data >> 8) & 0xff;
-	if (mem_mask & 0x00ff)
-		m_h8_busctrl[reg + 1] = data & 0xff;
-}
-
-
 u16 korgprophecy_state::io_r(offs_t offset, u16 mem_mask)
 {
 	// Return idle-high data until actual peripherals are mapped.
@@ -4061,7 +4041,6 @@ void korgprophecy_state::h8_map(address_map &map)
 	map(0x000000, 0x07ffff).rom().region("subcpu", 0);
 	map(0x040000, 0x05ffff).rw(FUNC(korgprophecy_state::h8_sram_r8), FUNC(korgprophecy_state::h8_sram_w8)).mirror(0x020000);
 	map(0x0c0000, 0x0c0007).rw(FUNC(korgprophecy_state::h8_dsp_r8), FUNC(korgprophecy_state::h8_dsp_w8));
-	map(0x0fffec, 0x0fffef).rw(FUNC(korgprophecy_state::h8_busctrl_r), FUNC(korgprophecy_state::h8_busctrl_w));
 }
 
 void korgprophecy_state::dsp_ram_map(address_map &map)
@@ -4274,7 +4253,11 @@ void korgprophecy_state::prophecy(machine_config &config)
 
 	NVRAM(config, "sysram", nvram_device::DEFAULT_ALL_0);
 
-	H83003(config, m_subcpu, h8_clock).set_mode_a20();
+	h83003_device &subcpu(H83003(config, m_subcpu, h8_clock));
+	// IC28 MD2:MD1:MD0 is strapped 0:1:0: mode 2, with a 1 MiB address
+	// space and a 16-bit external bus at reset.
+	subcpu.set_mode_a20(true);
+	subcpu.set_external_bus_timing(!std::getenv("KPROP_H8_DISABLE_NATIVE_BUS_TIMING"));
 	m_subcpu->set_addrmap(AS_PROGRAM, &korgprophecy_state::h8_map);
 	m_subcpu->read_adc<0>().set(FUNC(korgprophecy_state::h8_adc_r<0>));
 	m_subcpu->read_adc<1>().set(FUNC(korgprophecy_state::h8_adc_r<1>));
