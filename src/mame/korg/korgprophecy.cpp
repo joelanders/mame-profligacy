@@ -325,7 +325,6 @@ private:
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
 	TIMER_CALLBACK_MEMBER(mailbox_lie_tick);
 	TIMER_CALLBACK_MEMBER(v55_h8_service_tick);
-	TIMER_CALLBACK_MEMBER(h8_irq1_frame_complete);
 	TIMER_CALLBACK_MEMBER(v55_h8_tx_bit_tick);
 	TIMER_CALLBACK_MEMBER(h8_txd_sample_tick);
 	TIMER_CALLBACK_MEMBER(v55_txd1_sample_tick);
@@ -377,7 +376,7 @@ private:
 	u8 v55_p1_r();
 	u8 v55_p2_r();
 	void v55_p2_w(u8 data);
-	void v55_p3_w(u8 data);
+	void v55_p3_w(offs_t offset, u8 data, u8 mem_mask);
 	u8 v55_p4_r();
 	u8 v55_p8_r();
 	void v55_p8_w(u8 data);
@@ -403,13 +402,12 @@ private:
 	void poll_h8_tx_ring();
 	void v55_txd_w(int state);
 	TIMER_CALLBACK_MEMBER(v55_txd_sync);
+	TIMER_CALLBACK_MEMBER(v55_p33_sync);
 	void v55_txd1_w(int state);
 	void handle_midi_tx_byte(u8 data);
 	void midi_rxd1_w(int state);
 	void h8_txd0_w(int state);
 	TIMER_CALLBACK_MEMBER(h8_txd_sync);
-	void pulse_h8_irq1(const char *reason);
-	void update_h8_cts_from_port8();
 	u8 h8_sram_r8(offs_t offset);
 	void h8_sram_w8(offs_t offset, u8 data);
 	u8 h8_nocycle_r8(u32 addr);
@@ -495,7 +493,6 @@ private:
 	bool m_pulse_virtual_only = false;
 	bool m_evtq_note_inject = false;
 	emu_timer *m_v55_h8_service_timer = nullptr;
-	emu_timer *m_h8_irq1_frame_timer = nullptr;
 	emu_timer *m_v55_h8_tx_timer = nullptr;
 	emu_timer *m_h8_txd_sample_timer = nullptr;
 	emu_timer *m_v55_txd1_sample_timer = nullptr;
@@ -589,7 +586,6 @@ private:
 	u8 m_h8_porta = 0xff;
 	u8 m_h8_portc = 0xff;
 	u8 m_h8_port8 = 0xff;
-	u8 m_h8_cts_state = 0;
 	u8 m_v55_txd_state = 1;
 	u8 m_v55_txd1_state = 1;
 	u8 m_midi_rxd1_state = 1;
@@ -923,7 +919,6 @@ void korgprophecy_state::machine_start()
 	save_item(NAME(m_h8_porta));
 	save_item(NAME(m_h8_portc));
 	save_item(NAME(m_h8_port8));
-	save_item(NAME(m_h8_cts_state));
 	save_item(NAME(m_v55_txd_state));
 	save_item(NAME(m_v55_txd1_state));
 	save_item(NAME(m_h8_txd_state));
@@ -1126,7 +1121,6 @@ void korgprophecy_state::machine_start()
 	}
 	m_mb_lie_timer = timer_alloc(FUNC(korgprophecy_state::mailbox_lie_tick), this);
 	m_v55_h8_service_timer = timer_alloc(FUNC(korgprophecy_state::v55_h8_service_tick), this);
-	m_h8_irq1_frame_timer = timer_alloc(FUNC(korgprophecy_state::h8_irq1_frame_complete), this);
 	m_v55_h8_tx_timer = timer_alloc(FUNC(korgprophecy_state::v55_h8_tx_bit_tick), this);
 	m_h8_txd_sample_timer = timer_alloc(FUNC(korgprophecy_state::h8_txd_sample_tick), this);
 	m_v55_txd1_sample_timer = timer_alloc(FUNC(korgprophecy_state::v55_txd1_sample_tick), this);
@@ -1434,7 +1428,6 @@ void korgprophecy_state::machine_reset()
 	m_h8_porta = 0xff;
 	m_h8_portc = 0xff;
 	m_h8_port8 = 0xff;
-	m_h8_cts_state = 0;
 	m_v55_txd_state = 1;
 	m_fault_drop_v55_h8_frames = 0;
 	m_fault_drop_v55_h8_armed = false;
@@ -1530,7 +1523,12 @@ void korgprophecy_state::machine_reset()
 	m_gui_midi_rx_last_progress_sent = 0;
 	m_gui_midi_rx_last_progress_time = 0.0;
 	midi_rxd1_w(1);
-	m_maincpu->cts_w(m_h8_cts_state);
+	// P33/INT is idle high at reset and drives H8 P81/IRQ1 active-low.
+	set_v55_shadow_byte(0x03, v55_shadow_byte(0x03) | 0x08);
+	m_subcpu->set_input_line(1, CLEAR_LINE);
+	// P81 is not V55 CTS0. The board does not route that net to CTS0, so keep
+	// the active-low V55 input asserted.
+	m_maincpu->cts_w(0);
 	if (m_mb_lie_timer != nullptr)
 	{
 		if (m_pulse_queue_inject || m_pulse_scanq_inject || m_evtq_note_inject)
@@ -1540,8 +1538,6 @@ void korgprophecy_state::machine_reset()
 	}
 	if (m_v55_h8_service_timer != nullptr)
 		m_v55_h8_service_timer->adjust(attotime::from_usec(100), 0, attotime::from_usec(100));
-	if (m_h8_irq1_frame_timer != nullptr)
-		m_h8_irq1_frame_timer->adjust(attotime::never);
 	if (m_v55_h8_tx_timer != nullptr)
 		m_v55_h8_tx_timer->adjust(attotime::never);
 	if (m_h8_txd_sample_timer != nullptr)
@@ -1694,21 +1690,7 @@ void korgprophecy_state::start_v55_h8_tx(u8 data)
 	// has to drain the older RAM queue, but byte launch now goes through the
 	// native V55 channel-0 SFR path so the core emits real `TXD0` edges.
 	v55_sfr_write_byte(0x75, data);
-	// The H8 firmware enables only IRQ1 and uses that external interrupt
-	// to budget SCI0 receive parsing. The traced schematic omits the real
-	// source, but coupling it to V55 byte launch matches observed behavior
-	// much better than scribbling the budget counter directly.
-	pulse_h8_irq1("TXSTART");
 	m_v55_h8_tx_timer->adjust(h8_sci0_bit_period() * 10);
-}
-
-void korgprophecy_state::pulse_h8_irq1(const char *reason)
-{
-	++m_h8_irq1_pulses;
-	if (reason != nullptr && std::strcmp(reason, "TXD0_START") == 0)
-		++m_h8_irq1_start_pulses;
-	m_subcpu->set_input_line(1, ASSERT_LINE);
-	m_subcpu->set_input_line(1, CLEAR_LINE);
 }
 
 void korgprophecy_state::poll_h8_tx_ring()
@@ -1890,26 +1872,6 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::v55_h8_service_tick)
 		space.write_word(MB_PHYS_A70E, count - 1);
 		start_v55_h8_tx(data);
 		return;
-	}
-}
-
-TIMER_CALLBACK_MEMBER(korgprophecy_state::h8_irq1_frame_complete)
-{
-	++m_h8_irq1_frame_checks;
-	// A start-bit IRQ lets the H8 parse the preceding byte.  If the V55
-	// transmit buffer is empty in the stop bit, no next start bit will wake
-	// the parser for the final byte in the burst, so supply that missing wake.
-	if (v55_sfr_byte(0x74) & 0x20)
-	{
-		address_space &h8space = m_subcpu->space(AS_PROGRAM);
-		const u16 cmd_w = h8space.read_dword(0x048294) & 0x03ff;
-		const u16 cmd_r = h8space.read_dword(0x048298) & 0x03ff;
-		const bool rdr_full = BIT(h8space.read_byte(0x0fffb4), 6);
-		if (cmd_w != cmd_r || rdr_full)
-		{
-			++m_h8_irq1_frame_wakes;
-			pulse_h8_irq1("TXD0_BURST_COMPLETE");
-		}
 	}
 }
 
@@ -2273,10 +2235,27 @@ void korgprophecy_state::v55_p2_w(u8 data)
 	update_panel_led_serial(old, data);
 }
 
-void korgprophecy_state::v55_p3_w(u8 data)
+void korgprophecy_state::v55_p3_w(offs_t, u8 data, u8 mem_mask)
 {
+	const u8 old = v55_shadow_byte(0x03);
+	data = u8((old & ~mem_mask) | (data & mem_mask));
 	set_v55_shadow_byte(0x03, data);
+	if ((mem_mask & 0x08) && BIT(old, 3) != BIT(data, 3))
+	{
+		// P33 drives active-low INT to H8 P81/IRQ1. Synchronize the cross-CPU
+		// level so the H8 cannot run past the V55 edge in its current slice.
+		machine().scheduler().synchronize(
+			timer_expired_delegate(FUNC(korgprophecy_state::v55_p33_sync), this),
+			BIT(data, 3));
+	}
 	update_led_bank(data);
+}
+
+TIMER_CALLBACK_MEMBER(korgprophecy_state::v55_p33_sync)
+{
+	m_subcpu->set_input_line(1, param ? CLEAR_LINE : ASSERT_LINE);
+	if (!param)
+		++m_h8_irq1_pulses;
 }
 
 u8 korgprophecy_state::v55_p4_r()
@@ -2948,10 +2927,7 @@ void korgprophecy_state::h8_portc_w(u8 data)
 void korgprophecy_state::h8_port8_w(u8 data)
 {
 	if (data != m_h8_port8)
-	{
 		m_h8_port8 = data;
-		update_h8_cts_from_port8();
-	}
 }
 
 void korgprophecy_state::v55_txd_w(int state)
@@ -3032,31 +3008,13 @@ void korgprophecy_state::v55_txd_w(int state)
 	if (m_sync_board_uart_edges)
 		machine().scheduler().synchronize(
 			timer_expired_delegate(FUNC(korgprophecy_state::v55_txd_sync), this),
-			(state ? 1 : 0) | (start_bit ? 2 : 0));
+			state ? 1 : 0);
 	else
-	{
-		if (start_bit)
-		{
-			pulse_h8_irq1("TXD0_START");
-			const attotime wire_bit = attotime::from_hz(
-				u32(double(m_subcpu->unscaled_clock()) / 384.0 + 0.5));
-			m_h8_irq1_frame_timer->adjust(wire_bit * 39 / 4);
-		}
 		m_subcpu->sci_rx_w<0>(state);
-	}
 }
 
 TIMER_CALLBACK_MEMBER(korgprophecy_state::v55_txd_sync)
 {
-	if (BIT(param, 1))
-	{
-		pulse_h8_irq1("TXD0_START");
-		// Sample late in the stop bit, after the H8 SCI has accepted the frame.
-		// A following start bit reschedules this timer for a back-to-back byte.
-		const attotime wire_bit = attotime::from_hz(
-			u32(double(m_subcpu->unscaled_clock()) / 384.0 + 0.5));
-		m_h8_irq1_frame_timer->adjust(wire_bit * 39 / 4);
-	}
 	m_subcpu->sci_rx_w<0>(BIT(param, 0));
 }
 
@@ -3672,18 +3630,6 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::h8_txd_sync)
 	m_maincpu->rxd_w(param ? 1 : 0);
 }
 
-void korgprophecy_state::update_h8_cts_from_port8()
-{
-	const bool p81 = BIT(m_h8_port8, 1);
-	// CTS is active-low on the H8 serial link.
-	const u8 state = p81 ? 0 : 1;
-	m_maincpu->cts_w(state);
-	if (state != m_h8_cts_state)
-	{
-		m_h8_cts_state = state;
-	}
-}
-
 void korgprophecy_state::dsp1_empty_w(int state)
 {
 	if (state)
@@ -4274,9 +4220,8 @@ void korgprophecy_state::prophecy(machine_config &config)
 	m_subcpu->write_portc().set(FUNC(korgprophecy_state::h8_portc_w));
 	m_subcpu->write_port8().set(FUNC(korgprophecy_state::h8_port8_w));
 
-	// Confirmed board links: V55 TXD0/RXD0 <-> H8 RXD0/TXD0 and H8 P81 -> V55 P33.
-	// P33 is grouped with the serial pins on the original schematic even though
-	// it is not explicitly text-labeled CTS0 there.
+	// Confirmed board links: V55 TXD0/RXD0 <-> H8 RXD0/TXD0, and V55 P33/INT
+	// drives H8 P81/IRQ1.
 	m_maincpu->txd_handler_cb().set(FUNC(korgprophecy_state::v55_txd_w));
 	m_maincpu->txd1_handler_cb().set(FUNC(korgprophecy_state::v55_txd1_w));
 	m_maincpu->txd1_handler_cb().append("mdout", FUNC(midi_port_device::write_txd));

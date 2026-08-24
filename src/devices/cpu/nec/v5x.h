@@ -423,8 +423,8 @@ private:
 	void sfr_w(offs_t offset, u8 data);
 	u8 port_r(unsigned port);
 	void port_w(unsigned port, u8 data);
-	bool port2_output_enabled() const;
-	void update_port2_output();
+	u8 port_output_mask(unsigned port) const;
+	void update_port_output(unsigned port);
 	void update_timer(timer_irq_source source);
 	attotime timer_tick_period(timer_irq_source source) const;
 	TIMER_CALLBACK_MEMBER(timer_tick);
