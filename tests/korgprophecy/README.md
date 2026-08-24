@@ -97,6 +97,21 @@ legacy V55 board transport and closed when the manual-faithful UART0/INTST0 path
 became the clean shipping default. This remains an equivalence gate rather than
 a generated hardware golden: any future mismatch stays red.
 
+## V55 UART baud generators
+
+Run the ROM-free divider and timer-routing regression:
+
+```bash
+python3 tests/korgprophecy/v55_uart_brg_timing_test.py
+```
+
+The test compiles the production `uart_bit_period` method in a small
+type-compatible harness. It checks independent `TXBRG`/`RXBRG` and `PRS`
+selection for both channels, including the Prophecy's measured 31.25 kbaud
+V55-to-H8 and approximately 32 kbaud H8-to-V55 configuration. Static checks
+ensure every UART timer uses the appropriate transmit or receive divider and
+that the retired fixed-rate and stop-edge workaround cannot reappear.
+
 Audit or install the legacy asset bundle:
 
 ```bash

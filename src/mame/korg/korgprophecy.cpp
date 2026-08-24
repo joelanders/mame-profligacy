@@ -4268,24 +4268,6 @@ void korgprophecy_state::prophecy(machine_config &config)
 	// Shipping uses the native channel-0 RX/TX workers and channel-1 MIDI/SysEx
 	// workers. The driver-side RAM-queue transport remains structurally idle.
 	m_maincpu->set_serial_irq_mode(v55_device::serial_irq_mode::rx0_tx0);
-	// The V55 board-link TX rate must track the H8 SCI0 rate (= h8_clock/384
-	// for Prophecy's boot SMR=00/BRR=0b config); it was previously hardcoded
-	// to the 16 MHz-derived 41,667 baud.
-	m_maincpu->set_uart0_bit_rate(u32(double(h8_clock) / 384.0 + 0.5));
-	// The modeled endpoints otherwise put the V55 stop transition and H8
-	// stop-bit sample on the same scheduler timestamp.  Lead that one edge by
-	// one H8 SCI oversampling interval (2 us / 32 V55 clocks), then compensate
-	// in the stop-bit duration.  A one-clock lead fixed an exact scheduler tie
-	// but was not enough for every relative V55/H8 clock phase.
-	// Keep an opt-in diagnostic override so the exact-tie failure is replayable.
-	u32 v55_uart0_stop_edge_lead_ticks = 32;
-	if (const char *e = std::getenv("KPROP_V55_UART0_STOP_EDGE_LEAD_TICKS"))
-	{
-		const long ticks = std::strtol(e, nullptr, 0);
-		if (ticks >= 0 && ticks <= 100)
-			v55_uart0_stop_edge_lead_ticks = u32(ticks);
-	}
-	m_maincpu->set_uart0_stop_edge_lead_ticks(v55_uart0_stop_edge_lead_ticks);
 	// V55 register-bank interrupt targets come from the low nibble of each
 	// vector-table entry. Prophecy's saved vector 20 entry selects bank 13;
 	// leave KPROP_V55_TM2_BANK as an explicit diagnostic override only.

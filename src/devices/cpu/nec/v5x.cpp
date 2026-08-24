@@ -2005,7 +2005,7 @@ void v55_device::rxd_w(int state)
 		m_uart0_rx_byte = 0x00;
 		m_uart0_rx_bit = 0x00;
 		if (m_uart0_rx_timer != nullptr)
-			m_uart0_rx_timer->adjust(uart0_bit_period() + uart0_bit_period() / 2);
+			m_uart0_rx_timer->adjust(uart0_rx_bit_period() + uart0_rx_bit_period() / 2);
 	}
 
 	m_rxd0 = u8(state);
@@ -2043,13 +2043,21 @@ void v55_device::cts_w(int state)
 	}
 }
 
-attotime v55_device::uart0_bit_period() const
+attotime v55_device::uart_bit_period(unsigned channel, bool transmit) const
 {
-	// Channel 0 is the primary board link on Prophecy. Until the full
-	// TXBRG/RXBRG/PRS decode is modeled, use the driver-configured rate
-	// (must track the H8 SCI0 rate; 41,667 was the observed rate with the
-	// H8 modeled at 16 MHz).
-	return attotime::from_hz(m_uart0_bit_rate);
+	// V55PI Hardware User's Manual U10514EJ5V0UM00 section 7.3: PRSn.TSK
+	// (bits 5:3) and PRSn.RSK (bits 2:0) select phi / 2^(n+1) for the
+	// transmit and receive baud generators respectively.  A BRG value M
+	// divides that input by M+1, and the BRG borrow output is divided by two
+	// before it clocks the UART.  Therefore one bit cell is exactly
+	// (M+1) * 2^(n+2) device clocks.  Channel register blocks start at 170h
+	// and 178h, with TXBRG, RXBRG, and PRS at offsets 0, 1, and 2.
+	const unsigned base = 0x170 + channel * 8;
+	const u8 brg = m_sfr[base + (transmit ? 0 : 1)];
+	const u8 prs = m_sfr[base + 2];
+	const unsigned selector = transmit ? ((prs >> 3) & 0x07) : (prs & 0x07);
+	const u32 ticks = u32(brg + 1U) << (selector + 2);
+	return attotime::from_ticks(ticks, clock());
 }
 
 void v55_device::update_uart0_status()
@@ -2089,7 +2097,7 @@ void v55_device::start_uart0_tx()
 	update_uart0_status();
 	request_internal_serial_irq(SERIAL_IRQ_INTST0);
 	if (m_uart0_tx_timer != nullptr)
-		m_uart0_tx_timer->adjust(uart0_bit_period());
+		m_uart0_tx_timer->adjust(uart0_tx_bit_period());
 }
 
 TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
@@ -2102,16 +2110,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		m_uart0_txd_state = BIT(m_uart0_tx_byte, m_uart0_tx_bit);
 		m_txd0_handler(m_uart0_txd_state);
 		m_uart0_tx_bit++;
-		// Real asynchronous endpoints cannot have a receiver sample and the
-		// transmitter's stop edge at the exact same instant.  If requested by
-		// the board driver, lead only that edge by a tiny amount to make the
-		// scheduler ordering deterministic.  The time is returned to the stop
-		// bit below, so the baud rate and the following start edge do not move.
-		const attotime stop_edge_lead = clocks_to_attotime(m_uart0_stop_edge_lead_ticks);
-		m_uart0_tx_timer->adjust(
-			(m_uart0_tx_bit == 8 && stop_edge_lead < uart0_bit_period())
-				? uart0_bit_period() - stop_edge_lead
-				: uart0_bit_period());
+		m_uart0_tx_timer->adjust(uart0_tx_bit_period());
 		return;
 	}
 
@@ -2120,7 +2119,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_tx_tick)
 		m_uart0_txd_state = 1;
 		m_txd0_handler(1);
 		m_uart0_tx_bit++;
-		m_uart0_tx_timer->adjust(uart0_bit_period() + clocks_to_attotime(m_uart0_stop_edge_lead_ticks));
+		m_uart0_tx_timer->adjust(uart0_tx_bit_period());
 		return;
 	}
 
@@ -2149,7 +2148,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart0_rx_tick)
 		if (m_rxd0)
 			m_uart0_rx_byte |= u8(1U << m_uart0_rx_bit);
 		m_uart0_rx_bit++;
-		m_uart0_rx_timer->adjust(uart0_bit_period());
+		m_uart0_rx_timer->adjust(uart0_rx_bit_period());
 		return;
 	}
 
@@ -2179,7 +2178,7 @@ void v55_device::rxd1_w(int state)
 		m_uart1_rx_byte = 0x00;
 		m_uart1_rx_bit = 0x00;
 		if (m_uart1_rx_timer != nullptr)
-			m_uart1_rx_timer->adjust(uart1_bit_period() + uart1_bit_period() / 2);
+			m_uart1_rx_timer->adjust(uart1_rx_bit_period() + uart1_rx_bit_period() / 2);
 	}
 
 	m_rxd1 = u8(state);
@@ -2192,14 +2191,6 @@ void v55_device::cts1_w(int state)
 	update_uart1_status();
 	if (!m_cts1)
 		start_uart1_tx();
-}
-
-attotime v55_device::uart1_bit_period() const
-{
-	// The Prophecy firmware programs UART1 as a MIDI/SysEx transport, so a
-	// conservative fixed 31.25 kbaud approximation is preferable to the old
-	// always-ready stub until the full PRS/UARTM decode is modeled.
-	return attotime::from_hz(31'250);
 }
 
 void v55_device::update_uart1_status()
@@ -2230,7 +2221,7 @@ void v55_device::start_uart1_tx()
 	m_txd1_handler(0);
 	update_uart1_status();
 	if (m_uart1_tx_timer != nullptr)
-		m_uart1_tx_timer->adjust(uart1_bit_period());
+		m_uart1_tx_timer->adjust(uart1_tx_bit_period());
 }
 
 TIMER_CALLBACK_MEMBER(v55_device::uart1_tx_tick)
@@ -2243,7 +2234,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart1_tx_tick)
 		m_uart1_txd_state = BIT(m_uart1_tx_byte, m_uart1_tx_bit);
 		m_txd1_handler(m_uart1_txd_state);
 		m_uart1_tx_bit++;
-		m_uart1_tx_timer->adjust(uart1_bit_period());
+		m_uart1_tx_timer->adjust(uart1_tx_bit_period());
 		return;
 	}
 
@@ -2252,7 +2243,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart1_tx_tick)
 		m_uart1_txd_state = 1;
 		m_txd1_handler(1);
 		m_uart1_tx_bit++;
-		m_uart1_tx_timer->adjust(uart1_bit_period());
+		m_uart1_tx_timer->adjust(uart1_tx_bit_period());
 		return;
 	}
 
@@ -2272,7 +2263,7 @@ TIMER_CALLBACK_MEMBER(v55_device::uart1_rx_tick)
 		if (m_rxd1)
 			m_uart1_rx_byte |= u8(1U << m_uart1_rx_bit);
 		m_uart1_rx_bit++;
-		m_uart1_rx_timer->adjust(uart1_bit_period());
+		m_uart1_rx_timer->adjust(uart1_rx_bit_period());
 		return;
 	}
 
