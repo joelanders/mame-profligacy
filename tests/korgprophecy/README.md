@@ -112,6 +112,22 @@ V55-to-H8 and approximately 32 kbaud H8-to-V55 configuration. Static checks
 ensure every UART timer uses the appropriate transmit or receive divider and
 that the retired fixed-rate and stop-edge workaround cannot reappear.
 
+## V55 P33 and H8 IRQ1 board route
+
+Run the ROM-free port-direction and board-consumer regression:
+
+```bash
+python3 tests/korgprophecy/v55_port_direction_test.py
+```
+
+The V55 core qualifies P2/P3 callbacks per pin from the PM/PMC registers. The
+Prophecy driver consumes a driven P33 transition as the active-low INT level
+wired to H8 P81/IRQ1. This replaces the synthetic IRQ pulses formerly attached
+to UART byte launch and removes the incorrect H8-P81-to-V55-CTS interpretation.
+The route is supported by the service-manual netlist and retained physical P33
+captures; the regression checks production callback masks and rejects the
+retired synthetic paths.
+
 ## H8/3003 external-bus timing
 
 Run the ROM-free production-source regressions:

@@ -1455,24 +1455,27 @@ void v55_device::port_w(unsigned port, u8 data)
 {
 	const unsigned offset = 0x100 + port;
 	m_sfr[offset] = data;
-	if (port == 2)
-		update_port2_output();
+	if (port == 2 || port == 3)
+		update_port_output(port);
 	else if (!m_port_out_cb[port].isunset())
 		m_port_out_cb[port](data);
 }
 
-bool v55_device::port2_output_enabled() const
+u8 v55_device::port_output_mask(unsigned port) const
 {
-	// P2 is a six-bit port.  In port mode (PMC2 bit clear), PM2 bit clear
+	// P2 is a six-bit port and P3 is a seven-bit port.  In port mode (PMCn
+	// bit clear), PMn bit clear
 	// selects output.  Control-function outputs are not driven through the
 	// generic port callback.
-	return ((~m_sfr[0x122] & ~m_sfr[0x112] & 0x3f) != 0);
+	const u8 pin_mask = (port == 2) ? 0x3f : (port == 3) ? 0x7f : 0x00;
+	return ~m_sfr[0x120 + port] & ~m_sfr[0x110 + port] & pin_mask;
 }
 
-void v55_device::update_port2_output()
+void v55_device::update_port_output(unsigned port)
 {
-	if (!m_port_out_cb[2].isunset() && port2_output_enabled())
-		m_port_out_cb[2](m_sfr[0x102]);
+	const u8 output_mask = port_output_mask(port);
+	if (!m_port_out_cb[port].isunset() && output_mask)
+		m_port_out_cb[port](0, m_sfr[0x100 + port], output_mask);
 }
 
 u8 v55_device::timer_irq_ic(timer_irq_source source) const
@@ -1764,7 +1767,11 @@ void v55_device::sfr_w(offs_t offset, u8 data)
 	case 0x108: port_w(8, data); break;
 	case 0x112:
 	case 0x122:
-		update_port2_output();
+		update_port_output(2);
+		break;
+	case 0x113:
+	case 0x123:
+		update_port_output(3);
 		break;
 	case 0x173:
 		update_uart0_status();
@@ -1933,6 +1940,7 @@ void v55_device::device_reset()
 	m_sfr.fill(0x00);
 	m_sfr[0x0c5] = 0x80;
 	m_sfr[0x112] = 0xff;
+	m_sfr[0x113] = 0xff;
 	m_sfr[0x174] = 0x20;
 	m_rxd0 = 1;
 	m_cts0 = 0;
