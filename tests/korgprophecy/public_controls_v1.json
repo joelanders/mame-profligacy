@@ -62,8 +62,7 @@
         "KPROP_LOG_CONTROL_HEALTH_FINAL",
         "KPROP_TRACE_H8_CONTROL_END",
         "KPROP_TRACE_H8_CONTROL_EVENTS",
-        "KPROP_TRACE_H8_CONTROL_START",
-        "KPROP_V55_UART0_STOP_EDGE_LEAD_TICKS"
+        "KPROP_TRACE_H8_CONTROL_START"
       ]
     },
     "compatibility_or_stale_script_input": {

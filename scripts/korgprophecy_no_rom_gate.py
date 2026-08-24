@@ -76,6 +76,7 @@ def main() -> int:
     run(audit)
     run([sys.executable, "scripts/korgprophecy_control_audit.py"])
     run([sys.executable, "scripts/korgprophecy_corpus_policy.py"])
+    run([sys.executable, "tests/korgprophecy/v55_uart_brg_timing_test.py"])
     run(["git", "diff", "--check"])
 
     tms57test = executable("tms57test")

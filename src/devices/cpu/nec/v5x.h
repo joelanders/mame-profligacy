@@ -377,10 +377,6 @@ public:
 		rx0_rx1
 	};
 	void set_serial_irq_mode(serial_irq_mode mode) { m_default_serial_irq_mode = mode; }
-	// Board-link bit rate until the TXBRG/RXBRG/PRS decode is modeled. Must
-	// match the H8 SCI0 rate (h8_clock / 384 for Prophecy's boot SMR/BRR).
-	void set_uart0_bit_rate(u32 hz) { m_uart0_bit_rate = hz ? hz : 41'667; }
-	void set_uart0_stop_edge_lead_ticks(u32 ticks) { m_uart0_stop_edge_lead_ticks = ticks; }
 	u8 debug_uart0_mode() const { return m_sfr[0x173]; }
 	u8 debug_uart0_status() const { return m_sfr[0x174]; }
 	u8 debug_uart0_data() const { return m_sfr[0x175]; }
@@ -456,12 +452,15 @@ private:
 	void update_uart0_status();
 	bool uart0_tx_enabled() const;
 	void start_uart0_tx();
-	attotime uart0_bit_period() const;
+	attotime uart_bit_period(unsigned channel, bool transmit) const;
+	attotime uart0_tx_bit_period() const { return uart_bit_period(0, true); }
+	attotime uart0_rx_bit_period() const { return uart_bit_period(0, false); }
 	TIMER_CALLBACK_MEMBER(uart0_tx_tick);
 	TIMER_CALLBACK_MEMBER(uart0_rx_tick);
 	void update_uart1_status();
 	void start_uart1_tx();
-	attotime uart1_bit_period() const;
+	attotime uart1_tx_bit_period() const { return uart_bit_period(1, true); }
+	attotime uart1_rx_bit_period() const { return uart_bit_period(1, false); }
 	TIMER_CALLBACK_MEMBER(uart1_tx_tick);
 	TIMER_CALLBACK_MEMBER(uart1_rx_tick);
 	int select_internal_special_irq() const;
@@ -532,8 +531,6 @@ private:
 	u64 m_uart1_rx_overruns;
 	u64 m_uart1_rx_framing_errors;
 	serial_irq_mode m_default_serial_irq_mode = serial_irq_mode::off;
-	u32 m_uart0_bit_rate = 41'667;
-	u32 m_uart0_stop_edge_lead_ticks = 0;
 	std::array<u8, TIMER_IRQ_COUNT> m_timer_irq_bank;
 	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_pending;
 	std::array<bool, TIMER_IRQ_COUNT> m_timer_irq_in_service;
