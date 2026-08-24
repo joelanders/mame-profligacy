@@ -42,7 +42,7 @@ inline int tms57002_device::dbp(u32 st1)
 inline int tms57002_device::crm(u32 st1)
 {
 	// value overridden during cvar update
-	if (update_counter_head != update_counter_tail)
+	if (update_counter_count != 0)
 		return 0;
 
 	int crm = (st1 & ST1_CRM) >> ST1_CRM_SHIFT;

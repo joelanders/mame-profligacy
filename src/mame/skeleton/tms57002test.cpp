@@ -553,6 +553,17 @@ static tms57002_device::debug_snapshot load_snapshot_from_log(const char *path)
 			snapshot.pending_pre_transfer_value = parse_hex_u32(field_value(line, "VALUE="));
 			snapshot.update_counter_head = parse_hex_u32(field_value(line, "HEAD="));
 			snapshot.update_counter_tail = parse_hex_u32(field_value(line, "TAIL="));
+			// New logs carry the unambiguous 0..16 count.  Legacy logs predate
+			// that field, so recover 1..15 from the modulo indices; equal indices
+			// must remain the legacy empty assumption because full is unknowable.
+			snapshot.update_counter_count =
+				line.find("COUNT=") != std::string::npos
+					? parse_dec_int(field_value(line, "COUNT="))
+					: ((snapshot.update_counter_head - snapshot.update_counter_tail) & 0x0f);
+			if (line.find("ACTIVE=") != std::string::npos)
+				snapshot.update_active = parse_dec_int(field_value(line, "ACTIVE="));
+			if (line.find("ADDRRUN=") != std::string::npos)
+				snapshot.update_address_run = parse_hex_u32(field_value(line, "ADDRRUN="));
 		}
 		else if (line.find("KPROP_DSPSNAP_PRE_CMEM") != std::string::npos)
 		{
@@ -614,6 +625,8 @@ static tms57002_device::debug_snapshot load_snapshot_from_log(const char *path)
 			snapshot.update[idx] = parse_hex_u32(field_value(line, "VAL="));
 			snapshot.update_enqueue_su[idx] = parse_dec_u64(field_value(line, "ENQSU="));
 			snapshot.update_read_delay_seen[idx] = parse_dec_int(field_value(line, "RDSEEN="));
+			if (line.find("ADDRRUN=") != std::string::npos)
+				snapshot.update_address_run_for_entry[idx] = parse_hex_u32(field_value(line, "ADDRRUN="));
 		}
 	}
 
@@ -700,6 +713,22 @@ static tms57002_device::debug_snapshot load_snapshot_for_su_from_lines(const std
 			snapshot.sync_polarity_rising = parse_dec_int(field_value(line, "SYNCPOL="));
 			snapshot.serial_output_muted = parse_dec_int(field_value(line, "MUTED="));
 		}
+		else if (line.find("KPROP_DSPSNAP_PRE_PREXFER") != std::string::npos && line.find("TAG=:dsp3") != std::string::npos)
+		{
+			snapshot.pending_pre_transfer = parse_dec_int(field_value(line, "TYPE="));
+			snapshot.pending_pre_transfer_addr = parse_hex_u32(field_value(line, "ADDR="));
+			snapshot.pending_pre_transfer_value = parse_hex_u32(field_value(line, "VALUE="));
+			snapshot.update_counter_head = parse_hex_u32(field_value(line, "HEAD="));
+			snapshot.update_counter_tail = parse_hex_u32(field_value(line, "TAIL="));
+			snapshot.update_counter_count =
+				line.find("COUNT=") != std::string::npos
+					? parse_dec_int(field_value(line, "COUNT="))
+					: ((snapshot.update_counter_head - snapshot.update_counter_tail) & 0x0f);
+			if (line.find("ACTIVE=") != std::string::npos)
+				snapshot.update_active = parse_dec_int(field_value(line, "ACTIVE="));
+			if (line.find("ADDRRUN=") != std::string::npos)
+				snapshot.update_address_run = parse_hex_u32(field_value(line, "ADDRRUN="));
+		}
 		else if (line.find("KPROP_DSPSNAP_PRE_CMEM") != std::string::npos)
 		{
 			const u32 base = parse_hex_u32(field_value(line, "BASE="));
@@ -738,6 +767,18 @@ static tms57002_device::debug_snapshot load_snapshot_for_su_from_lines(const std
 				std::getline(ss, part, ',');
 				snapshot.dmem1[base + i] = parse_hex_u32(part);
 			}
+		}
+		else if (line.find("KPROP_DSPSNAP_PRE_UPDATE") != std::string::npos)
+		{
+			const u32 idx = parse_hex_u32(field_value(line, "IDX="));
+			if (idx >= 16)
+				throw emu_fatalerror("Bad update index %u in %s", idx, line);
+			snapshot.update_sa[idx] = parse_hex_u32(field_value(line, "SA="));
+			snapshot.update[idx] = parse_hex_u32(field_value(line, "VAL="));
+			snapshot.update_enqueue_su[idx] = parse_dec_u64(field_value(line, "ENQSU="));
+			snapshot.update_read_delay_seen[idx] = parse_dec_int(field_value(line, "RDSEEN="));
+			if (line.find("ADDRRUN=") != std::string::npos)
+				snapshot.update_address_run_for_entry[idx] = parse_hex_u32(field_value(line, "ADDRRUN="));
 		}
 	}
 
@@ -1731,6 +1772,105 @@ void tms57002test_state::test_cmem_update_multiword_sequence()
 	check_equal("cmem update2 aacc", u32(m_dsp->debug_aacc()), UPDATE2);
 	check_equal("cmem update2 target", m_dsp->cmem_value(0x12), UPDATE2);
 	check_equal("cmem update empty after sequence", m_dsp->update_pending_count(), 0);
+
+	// The modulo head/tail representation aliases empty and full.  Exercise
+	// all 16 physical update registers and verify that a seventeenth word does
+	// not erase or overwrite the valid queue.
+	std::array<u32, 16> full_program{};
+	for (u32 i = 0; i < full_program.size(); i++)
+		full_program[i] = OPCODE_LACC_C_BASE | (0x20 + i);
+	const u32 program_version_before_full_load = m_dsp->jit_program_version();
+	m_dsp->debug_load_program(full_program.data(), u32(full_program.size()), ST0_DSP2, ST1_DSP2);
+	check_equal("cmem program reload invalidates pooled cache",
+		m_dsp->jit_program_version(), program_version_before_full_load + 1);
+	m_dsp->debug_set_exec_state(0x00, 0x00, 0x00, 0x00, 0x00, ST0_DSP2, ST1_DSP2, 0);
+	m_dsp->cload_w(0);
+	m_dsp->data_w(0x20);
+	for (u32 i = 0; i < 16; i++)
+		write_update_word(0x10000000U + i);
+
+	auto full = m_dsp->debug_capture_snapshot();
+	check_equal("cmem update full count", full.update_counter_count, 16);
+	check_equal("cmem update full head-tail alias", full.update_counter_head, full.update_counter_tail);
+	check_equal("cmem update full first preserved", full.update[0], 0x10000000);
+	check_equal("cmem update full last preserved", full.update[15], 0x1000000f);
+	check_equal("cmem update full EMPTY low", m_dsp->empty_r(), 0);
+
+	write_update_word(0xdeadbeef);
+	full = m_dsp->debug_capture_snapshot();
+	check_equal("cmem update overflow count preserved", full.update_counter_count, 16);
+	check_equal("cmem update overflow oldest preserved", full.update[0], 0x10000000);
+	check_equal("cmem update overflow newest preserved", full.update[15], 0x1000000f);
+	m_dsp->cload_w(1);
+	m_dsp->debug_run_cycles(1);
+	check_equal("cmem update pre-restore count", m_dsp->update_pending_count(), 15);
+	m_dsp->debug_restore_snapshot(full);
+	check_equal("cmem update full snapshot count restored", m_dsp->update_pending_count(), 16);
+	check_equal("cmem update full snapshot EMPTY low", m_dsp->empty_r(), 0);
+	m_dsp->cload_w(1);
+	for (u32 i = 0; i < 16; i++)
+	{
+		m_dsp->debug_run_cycles(1);
+		check_equal("cmem update full sequence value", m_dsp->cmem_value(0x20 + i), 0x10000000U + i);
+	}
+	check_equal("cmem update full sequence drained", m_dsp->update_pending_count(), 0);
+	check_equal("cmem update drained EMPTY high", m_dsp->empty_r(), 1);
+
+	// In the explicit pooled-CMEM test profile, the first pass above compiles
+	// the program while executing it through the interpreter.  Restore the
+	// identical full-ring state and prove that the cached native entry actually
+	// runs and observes all 16 queued words rather than treating head == tail as
+	// empty.  The normal public profile remains interpreter-only and skips this
+	// additional backend-specific pass.
+	const char *const perframe = std::getenv("KPROP_DSP_PERFRAME");
+	const bool pooled_cmem_profile = perframe && std::atoi(perframe) == 4
+		&& std::getenv("KPROP_PF4_CMEM_DEOPT");
+	const bool forced_guard_compile_failure = std::getenv("KPROP_PF4_FORCE_CMEM_COMPILE_FAIL");
+	if (pooled_cmem_profile)
+	{
+		m_dsp->debug_restore_snapshot(full);
+		m_dsp->cload_w(1);
+		const long runs_before = m_dsp->debug_pooled_run_count();
+		const long cmem_runs_before = m_dsp->debug_pooled_cmem_run_count();
+		for (u32 i = 0; i < 16; i++)
+			m_dsp->debug_run_cycles(1);
+		if (forced_guard_compile_failure)
+		{
+			check_equal("cmem missing guarded entry avoids native base", m_dsp->debug_pooled_run_count(), runs_before);
+			check_equal("cmem missing guarded entry not selected", m_dsp->debug_pooled_cmem_run_count(), cmem_runs_before);
+		}
+		else
+		{
+			check_true("cmem pooled native entry executed", m_dsp->debug_pooled_run_count() > runs_before);
+			check_true("cmem pooled guarded entry selected", m_dsp->debug_pooled_cmem_run_count() > cmem_runs_before);
+		}
+		check_equal("cmem pooled full sequence drained", m_dsp->update_pending_count(), 0);
+		for (u32 i = 0; i < 16; i++)
+			check_equal("cmem pooled full sequence value", m_dsp->cmem_value(0x20 + i), 0x10000000U + i);
+		check_equal("cmem pooled drained EMPTY high", m_dsp->empty_r(), 1);
+	}
+
+	// JIT analysis takes and restores debug snapshots.  Preserve partially
+	// received host bytes as well as HIDX, otherwise a restored packet can be
+	// assembled from bytes written after the snapshot.
+	m_dsp->debug_load_program(program.data(), u32(program.size()), ST0_DSP2, ST1_DSP2);
+	m_dsp->cload_w(0);
+	m_dsp->data_w(0x40);
+	m_dsp->data_w(0x12);
+	m_dsp->data_w(0x34);
+	const auto partial = m_dsp->debug_capture_snapshot();
+	check_equal("cmem partial snapshot hidx", partial.hidx, 2);
+	check_equal("cmem partial snapshot byte0", partial.host[0], 0x12);
+	check_equal("cmem partial snapshot byte1", partial.host[1], 0x34);
+	m_dsp->data_w(0xaa);
+	m_dsp->data_w(0xbb);
+	m_dsp->debug_restore_snapshot(partial);
+	m_dsp->data_w(0x56);
+	check_equal("cmem partial fourth-STRB EMPTY low", m_dsp->empty_r(), 0);
+	m_dsp->data_w(0x78);
+	const auto restored = m_dsp->debug_capture_snapshot();
+	check_equal("cmem partial restored queue count", restored.update_counter_count, 1);
+	check_equal("cmem partial restored packet", restored.update[0], 0x12345678);
 }
 
 void tms57002test_state::test_cmem_update_waits_for_cload_high()

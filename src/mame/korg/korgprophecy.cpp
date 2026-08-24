@@ -332,7 +332,6 @@ private:
 	TIMER_CALLBACK_MEMBER(host_service_tick);
 	TIMER_CALLBACK_MEMBER(inject_note_tick);   // KPROP_INJECT_NOTE: deterministic tick-exact note on/off
 	TIMER_CALLBACK_MEMBER(inject_sysex_tick);  // KPROP_INJECT_SYSEX: enqueue a .syx blob at a tick-exact time
-	TIMER_CALLBACK_MEMBER(dsp_empty_ready_tick);
 	TIMER_CALLBACK_MEMBER(dsp_board_sync_tick);
 	void lcd_trace_control(u8 value);
 	void lcd_trace_data(u8 value);
@@ -662,9 +661,7 @@ private:
 	u8 m_v55_txd1_decode_bit = 0x00;
 	std::vector<u8> m_midi_tx_sysex;
 	u8 m_dsp_pload_level = 1;
-		u8 m_dsp_empty = 0x07;
-	std::array<emu_timer *, 3> m_dsp_empty_timer{};
-	u32 m_dsp_empty_hold_us = 2;
+	u8 m_dsp_empty = 0x07;
 	bool m_card_present = false;
 	bool m_card_write_protect = false;
 	u8 m_last_card_p0_status = 0xff;
@@ -1172,8 +1169,6 @@ void korgprophecy_state::machine_start()
 	}
 
 	m_dsp_sync_timer = timer_alloc(FUNC(korgprophecy_state::dsp_board_sync_tick), this);
-	for (u8 i = 0; i < 3; i++)
-		m_dsp_empty_timer[i] = timer_alloc(FUNC(korgprophecy_state::dsp_empty_ready_tick), this);
 
 	m_v55_status_tap.remove();
 	m_h8_cmdq_tap.remove();
@@ -1552,11 +1547,6 @@ void korgprophecy_state::machine_reset()
 			m_dsp_sync_timer->adjust(attotime::from_hz(m_dsp_sync_hz), 0, attotime::from_hz(m_dsp_sync_hz));
 		else
 			m_dsp_sync_timer->adjust(attotime::never);
-	}
-	for (emu_timer *timer : m_dsp_empty_timer)
-	{
-		if (timer != nullptr)
-			timer->adjust(attotime::never);
 	}
 }
 
@@ -1988,15 +1978,6 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::mailbox_lie_tick)
 			}
 		}
 	}
-}
-
-TIMER_CALLBACK_MEMBER(korgprophecy_state::dsp_empty_ready_tick)
-{
-	const u8 dsp = u8(param);
-	if (dsp >= 3)
-		return;
-
-	m_dsp_empty |= 1U << dsp;
 }
 
 TIMER_CALLBACK_MEMBER(korgprophecy_state::dsp_board_sync_tick)
@@ -3746,17 +3727,6 @@ void korgprophecy_state::h8_dsp_w8(offs_t offset, u8 data)
 	m_dsp_strobe_last_target = dsp;
 	tms57002_device *const target = (dsp == 0) ? &*m_dsp1 : (dsp == 1) ? &*m_dsp2 : &*m_dsp3;
 	target->data_w(data);
-
-	// The generic TMS57002 EMPTY callback tracks the internal update queue very
-	// literally, but Prophecy firmware uses PB0-2 as a host-transfer pacing
-	// signal. Keep the real DSP core behind the window while preserving the
-	// short board-level busy pulse that let the H8 upload sequences run.
-	if (BIT(m_dsp_empty, dsp))
-	{
-		m_dsp_empty &= ~(1U << dsp);
-		if (m_dsp_empty_timer[dsp] != nullptr)
-			m_dsp_empty_timer[dsp]->adjust(attotime::from_usec(m_dsp_empty_hold_us), dsp);
-	}
 }
 u16 korgprophecy_state::io_r(offs_t offset, u16 mem_mask)
 {
