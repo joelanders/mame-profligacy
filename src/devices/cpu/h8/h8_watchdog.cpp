@@ -71,11 +71,9 @@ void h8_watchdog_device::tcnt_update(u64 cur_time)
 				else
 					m_cpu->reset();
 			} else {
-				if(!(m_tcsr & TCSR_OVF)) {
-					m_tcsr |= TCSR_OVF;
-					m_ovf_clear_armed = false;
-					m_intc->internal_interrupt(m_irq);
-				}
+				m_tcsr |= TCSR_OVF;
+				m_ovf_clear_armed = false;
+				m_intc->internal_interrupt(m_irq);
 			}
 		}
 	} else
@@ -100,21 +98,13 @@ void h8_watchdog_device::wd_w(offs_t offset, u16 data, u16 mem_mask)
 	if(mem_mask != 0xffff)
 		return;
 
-	// KPSHIP-ACCURACY: read-before-OVF-clear is default-OFF, so deleting it is bit-exact for Korg.
-	// It's a plausibly-correct H8 watchdog semantic — decide vs the H8 manual: make it unconditional
-	// (needs an h8-machine regression check, shared core) or delete. Gate vs hardware, not the self-golden.
-	static const bool require_ovf_read_before_clear = std::getenv("KPROP_H8_WDT_READ_BEFORE_CLEAR") != nullptr;
-
 	if((data & 0xff00) == 0xa500) {
 		tcnt_update();
 		if(!(m_tcsr & TCSR_TME) && (data & TCSR_TME))
 			m_tcnt_cycle_base = m_cpu->total_cycles();
 
-		if(require_ovf_read_before_clear) {
-			const bool keep_ovf = (m_tcsr & TCSR_OVF) && ((data & TCSR_OVF) || !m_ovf_clear_armed);
-			m_tcsr = (data & 0x7f) | (keep_ovf ? TCSR_OVF : 0);
-		} else
-			m_tcsr = (m_tcsr & data & TCSR_OVF) | (data & 0x7f);
+		const bool keep_ovf = (m_tcsr & TCSR_OVF) && ((data & TCSR_OVF) || !m_ovf_clear_armed);
+		m_tcsr = (data & 0x7f) | (keep_ovf ? TCSR_OVF : 0);
 
 		if(!(m_tcsr & TCSR_OVF))
 			m_ovf_clear_armed = false;
