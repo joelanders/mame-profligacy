@@ -31,6 +31,55 @@ HOST_WRITE = re.compile(
 )
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def git_output(root: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=root,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode:
+        raise RuntimeError(
+            f"git {' '.join(arguments)} failed: {completed.stderr.strip()}"
+        )
+    return completed.stdout
+
+
+def source_provenance(root: Path, allow_dirty: bool) -> dict[str, object]:
+    top = Path(git_output(root, "rev-parse", "--show-toplevel").strip()).resolve()
+    if top != root:
+        raise RuntimeError(f"source root is not the Git top level: {root}")
+    head = git_output(root, "rev-parse", "HEAD").strip()
+    status = git_output(root, "status", "--porcelain", "--untracked-files=no")
+    diff = subprocess.run(
+        ["git", "diff", "--binary", "HEAD"],
+        cwd=root,
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout
+    if status and not allow_dirty:
+        raise RuntimeError(
+            "source tree has tracked changes; commit them or use "
+            "--allow-dirty-source for a diagnostic run"
+        )
+    return {
+        "commit": head,
+        "tracked_tree_clean": not bool(status),
+        "tracked_status_lines": status.splitlines(),
+        "tracked_diff_sha256": hashlib.sha256(diff).hexdigest(),
+    }
+
+
 def vlq(value: int) -> bytes:
     encoded = bytearray((value & 0x7F,))
     value >>= 7
@@ -228,12 +277,20 @@ def main() -> int:
     parser.add_argument("--seconds-to-run", type=float, default=22.0)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--keep-logs", action="store_true")
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[1],
+        help="clean Git tree whose source produced --binary",
+    )
+    parser.add_argument("--allow-dirty-source", action="store_true")
     args = parser.parse_args()
 
     args.binary = args.binary.resolve()
     args.rompath = args.rompath.resolve()
     args.program = args.program.resolve()
     args.output = args.output.resolve()
+    args.source_root = args.source_root.resolve()
     try:
         args.command = bytes.fromhex(args.command_hex)
     except ValueError as error:
@@ -246,6 +303,10 @@ def main() -> int:
         parser.error(f"ROM path is not a directory: {args.rompath}")
     if not args.program.is_file():
         parser.error(f"program file not found: {args.program}")
+    try:
+        source = source_provenance(args.source_root, args.allow_dirty_source)
+    except (RuntimeError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
     if args.slot < 0 or args.slot > 2:
         parser.error("--slot must be between 0 and 2")
     if args.period_us <= 0.0:
@@ -298,12 +359,73 @@ def main() -> int:
     # each command time with the earliest command time at or after that phase;
     # an excursion larger than half a service period is an extra-pass island.
     extra_ticks, excursions_us = classify_extra_ticks(rows, args.period_us)
+    canonical_rows = json.dumps(
+        rows, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    runner = Path(__file__).resolve()
+    runner_invocation = [
+        "python3",
+        runner.name,
+        "--binary", "<binary>",
+        "--rompath", "<rom-directory>",
+        "--program", "<program>",
+        "--command-hex", args.command.hex(),
+        "--slot", str(args.slot),
+        "--system", args.system,
+        "--period-us", f"{args.period_us:g}",
+        "--first-tick", str(args.first_tick),
+        "--last-tick", str(last_tick),
+        "--jobs", str(args.jobs),
+        "--retries", str(args.retries),
+        "--seconds-to-run", f"{args.seconds_to_run:g}",
+        "--output", "<new-output-directory>",
+        "--source-root", "<source-tree>",
+    ]
+    if expected_extra_ticks is not None:
+        runner_invocation.extend(
+            ["--expect-extra-ticks", args.expect_extra_ticks]
+        )
+    if args.keep_logs:
+        runner_invocation.append("--keep-logs")
+    if args.allow_dirty_source:
+        runner_invocation.append("--allow-dirty-source")
     receipt = {
-        "schema": "korgprophecy-h8-dispatch-full-phase-sweep-v2",
+        "schema": "korgprophecy-h8-dispatch-full-phase-sweep-v3",
         "started_at": started,
         "completed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
-        "binary": str(args.binary),
-        "binary_sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(),
+        "source": source,
+        "runner": {
+            "name": runner.name,
+            "sha256": sha256_file(runner),
+        },
+        "binary": {
+            "name": args.binary.name,
+            "size": args.binary.stat().st_size,
+            "sha256": sha256_file(args.binary),
+        },
+        "external_program": {
+            "name": args.program.name,
+            "size": args.program.stat().st_size,
+            "sha256": sha256_file(args.program),
+            "payload_copied_to_receipt": False,
+        },
+        "rom_input": {
+            "system": args.system,
+            "payload_or_path_copied_to_receipt": False,
+        },
+        "invocation": {
+            "runner": runner_invocation,
+            "emulator_per_take": [
+                "<binary>", args.system,
+                "-rompath", "<rom-directory>",
+                "-cfg_directory", "cfg",
+                "-nvram_directory", "nvram",
+                "-snapshot_directory", "snap",
+                "-midiin", "stimulus.mid",
+                "-seconds_to_run", f"{args.seconds_to_run:g}",
+                "-video", "none", "-nothrottle", "-log",
+            ],
+        },
         "period_us": args.period_us,
         "first_tick": args.first_tick,
         "last_tick": last_tick,
@@ -320,6 +442,8 @@ def main() -> int:
         "expectation_matches": (
             None if expected_extra_ticks is None else extra_ticks == expected_extra_ticks
         ),
+        "row_count": len(rows),
+        "rows_sha256": hashlib.sha256(canonical_rows).hexdigest(),
         "rows": rows,
     }
     (args.output / "phase-sweep-receipt.json").write_text(

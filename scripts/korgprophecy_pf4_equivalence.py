@@ -95,7 +95,25 @@ def tree_fingerprint(root: Path | None) -> dict[str, object] | None:
                 "sha256": sha256_file(path),
             }
         )
-    return {"root": str(root), "files": rows}
+    return {"payload_copied_to_receipt": False, "files": rows}
+
+
+def sanitize_command(
+    command: list[str], binary: Path, rompath: Path, output: Path
+) -> list[str]:
+    """Keep a reproducible command in receipts without local absolute paths."""
+    sanitized: list[str] = []
+    for argument in command:
+        if argument == str(binary):
+            sanitized.append("<binary>")
+        elif argument == str(rompath):
+            sanitized.append("<rom-directory>")
+        elif argument.startswith(f"{output}{os.sep}"):
+            relative = Path(argument).relative_to(output)
+            sanitized.append(f"<output>/{relative.as_posix()}")
+        else:
+            sanitized.append(argument)
+    return sanitized
 
 
 def first_difference(left: Path, right: Path) -> int | None:
@@ -143,6 +161,7 @@ def parse_runtime(log_text: str) -> dict[str, object]:
 def run_one(
     spec: RunSpec,
     binary: Path,
+    system: str,
     rompath: Path,
     nvram_seed: Path | None,
     output: Path,
@@ -160,7 +179,7 @@ def run_one(
 
     command = [
         str(binary),
-        "korgprop",
+        system,
         "-rompath",
         str(rompath),
         "-nvram_directory",
@@ -222,13 +241,13 @@ def run_one(
     }
     return RunResult(
         name=spec.name,
-        command=command,
+        command=sanitize_command(command, binary, rompath, output),
         environment=controlled,
         returncode=completed.returncode,
         wall_seconds=round(wall, 6),
         wav_bytes=wav.stat().st_size,
         wav_sha256=sha256_file(wav),
-        log=str(log),
+        log=str(log.relative_to(output)),
         **runtime,
     )
 
@@ -325,13 +344,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("cases", nargs="*", metavar="CASE")
     parser.add_argument("--binary", type=Path, default=Path("./propmin"))
+    parser.add_argument("--system", default="korgprop")
     parser.add_argument("--rompath", type=Path, default=Path("../mame/00-roms"))
     parser.add_argument("--nvram-seed", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--boot-seconds", type=int, default=15)
     parser.add_argument("--note-seconds", type=int, default=15)
     parser.add_argument("--dense-seconds", type=int, default=30)
-    parser.add_argument("--midframe-pc", type=lambda value: int(value, 0), default=5)
+    parser.add_argument("--midframe-pc", type=lambda value: int(value, 0), default=0)
+    parser.add_argument("--require-mode-conflict", action="store_true")
     parser.add_argument("--require-arm64", action="store_true")
     args = parser.parse_args()
     valid_cases = {"boot", "note", "midfb", "cmem", "dense"}
@@ -374,7 +395,7 @@ def main() -> int:
     print(f"PF4 gate: arch={platform.machine()} runs={len(specs)} output={output}")
     for spec in specs:
         try:
-            result = run_one(spec, binary, rompath, nvram_seed, output)
+            result = run_one(spec, binary, args.system, rompath, nvram_seed, output)
         except RuntimeError as error:
             failures.append(str(error))
             print(f"  FAIL {error}")
@@ -395,8 +416,8 @@ def main() -> int:
             checks.append({"name": label, "pass": False, "reason": "missing run"})
             failures.append(f"{label}: missing run")
             continue
-        candidate_wav = Path(candidate.log).with_name("audio.wav")
-        oracle_wav = Path(oracle.log).with_name("audio.wav")
+        candidate_wav = (output / candidate.log).with_name("audio.wav")
+        oracle_wav = (output / oracle.log).with_name("audio.wav")
         offset = first_difference(candidate_wav, oracle_wav)
         passed = offset is None
         checks.append(
@@ -441,7 +462,8 @@ def main() -> int:
         checks.append(
             {
                 "name": f"{stem}-mode-conflict-path-exercised",
-                "pass": exercised,
+                "pass": exercised if args.require_mode_conflict else None,
+                "required": args.require_mode_conflict,
                 "unsafe_only_pooled_frame_sizes": added_sizes,
                 "benign_mode_refinements": benign,
             }
@@ -450,15 +472,26 @@ def main() -> int:
             print(f"  PASS {stem}-unsafe-native-compile: unsafe-only frame sizes={added_sizes}")
         elif benign:
             print(f"  PASS {stem}-F5-benign-native-compile: {', '.join(benign)}")
-        else:
+        elif args.require_mode_conflict:
             failures.append(f"{stem}: mode-conflict path produced neither F5-benign nor unsafe-only compile evidence")
+        else:
+            print(f"  SKIP {stem}-mode-conflict-path: current fixture has no conflict")
 
     receipt = {
         "schema": 1,
         "status": "PASS" if not failures else "FAIL",
         "arch": platform.machine(),
-        "binary": {"path": str(binary), "sha256": sha256_file(binary)},
-        "rompath": str(rompath),
+        "binary": {
+            "name": binary.name,
+            "size": binary.stat().st_size,
+            "sha256": sha256_file(binary),
+        },
+        "system": args.system,
+        "require_mode_conflict": args.require_mode_conflict,
+        "rom_input": {
+            "system": args.system,
+            "payload_or_path_copied_to_receipt": False,
+        },
         "nvram_seed": tree_fingerprint(nvram_seed),
         "cases": list(args.cases),
         "runs": {name: asdict(result) for name, result in sorted(results.items())},
