@@ -150,6 +150,11 @@ deliberately not enabled: local release benchmarking found that it prevents
 real-time operation, while the native bus-cycle correction is independent of
 that scheduler setting.
 
+The watchdog test checks two independent interval-timer rules from the H8/3003
+manual: OVF clears only after a read-one/write-zero sequence, while every TCNT
+overflow requests an interrupt even if OVF was already set. It extracts and
+executes the production watchdog methods without ROM data.
+
 ## TMS57002 native EMPTY and update occupancy
 
 The fixed two-microsecond Prophecy driver pulse has been removed. Each DSP's

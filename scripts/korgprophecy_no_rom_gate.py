@@ -80,6 +80,7 @@ def main() -> int:
     run([sys.executable, "tests/korgprophecy/v55_port_direction_test.py"])
     run([sys.executable, "tests/korgprophecy/h83003_external_bus_timing_test.py"])
     run([sys.executable, "tests/korgprophecy/h83003_intc_state_test.py"])
+    run([sys.executable, "tests/korgprophecy/h8_watchdog_state_test.py"])
     run(["git", "diff", "--check"])
 
     tms57test = executable("tms57test")
