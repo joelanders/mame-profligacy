@@ -1521,6 +1521,11 @@ void tms57002test_state::test_example53_one_frame_output_latency()
 	m_dsp->set_serial_frame_clocks(512);
 	m_dsp->set_sync_polarity(1);
 	m_dsp->debug_load_program(program.data(), u32(program.size()), ST0_DSP3, ST1_DSP3);
+	// Program loading does not clear the chip's data RAM.  This fixture expects
+	// every post-increment source after address zero to be silent, so initialise
+	// that memory explicitly rather than depending on host allocator contents.
+	for (u16 address = 0; address < 0x100; address++)
+		m_dsp->debug_write_dmem0(u8(address), 0);
 	m_dsp->debug_write_dmem0(0x00, OUTPUT_SAMPLE);
 
 	const auto frame0 = m_dsp->debug_run_sample_frame({ 0, 0, 0, 0 }, 0x200);
@@ -1550,6 +1555,10 @@ void tms57002test_state::test_example53_dos_deadline()
 		m_dsp->set_serial_frame_clocks(512);
 		m_dsp->set_sync_polarity(1);
 		m_dsp->debug_load_program(program.data(), u32(program.size()), ST0_DSP3, ST1_DSP3);
+		// See test_example53_one_frame_output_latency: data RAM survives a
+		// program load, but this standalone fixture requires a zeroed tail.
+		for (u16 address = 0; address < 0x100; address++)
+			m_dsp->debug_write_dmem0(u8(address), 0);
 		m_dsp->debug_write_dmem0(0x00, OUTPUT_SAMPLE);
 
 		const auto frame0 = m_dsp->debug_run_sample_frame({ 0, 0, 0, 0 }, 0x200);
