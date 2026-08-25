@@ -97,6 +97,7 @@
         "KPROP_FLIGHT_END",
         "KPROP_GUI",
         "KPROP_H8CTL",
+        "KPROP_H8DSP",
         "KPROP_H8_RX_MISMATCH",
         "KPROP_H8V55_RXERR",
         "KPROP_H8WIRE",

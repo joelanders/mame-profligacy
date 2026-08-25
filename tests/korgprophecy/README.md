@@ -155,6 +155,34 @@ manual: OVF clears only after a read-one/write-zero sequence, while every TCNT
 overflow requests an interrupt even if OVF was already set. It extracts and
 executes the production watchdog methods without ROM data.
 
+## H8-to-DSP dispatch phase sweep
+
+The full-system phase runner tests a control event at every MIDI timestamp tick
+across one complete H8 service period and records when an externally supplied
+five-byte command reaches the selected DSP host port:
+
+```bash
+python3 scripts/korgprophecy_h8_dispatch_phase_sweep.py \
+  --binary ./propmin \
+  --rompath /path/to/rom-directory \
+  --program /path/to/program.syx \
+  --command-hex FIVE_BYTE_COMMAND \
+  --expect-extra-ticks EXPECTED_RANGE \
+  --output /new/output/directory
+```
+
+The script contains no ROM, program dump, expected command, or proprietary
+table. Those fixture inputs remain external. Each take uses fresh emulator
+state and generated standard MIDI. The JSON receipt pins the executable hash,
+all generated MIDI hashes, event and command timestamps, process return codes,
+the complete phase range, and whether the observed transient later-pass island
+matches the explicitly supplied expectation. A normal monotonic service-slot
+advance is not classified as a missed pass.
+
+`h8_dispatch_phase_sweep_test.py` exercises the runner's ROM-free tick parsing,
+MIDI generation, command matching, and extra-pass classifier before a
+firmware-backed sweep is attempted.
+
 ## TMS57002 native EMPTY and update occupancy
 
 The fixed two-microsecond Prophecy driver pulse has been removed. Each DSP's
