@@ -10,14 +10,9 @@ on:
     - 'src/**'
     - 'COPYING'
     - 'makefile'
-  pull_request:
-    paths:
-    - '.github/workflows/**'
-    - '3rdparty/**'
-    - 'scripts/**'
-    - 'src/**'
-    - 'COPYING'
-    - 'makefile'
+  # Prophecy PRs use the focused cross-platform no-ROM gate, and product
+  # releases build their own pinned propmin SDK.  Keep this full upstream-style
+  # matrix available on demand and for master.
   workflow_dispatch:
 
 concurrency:
