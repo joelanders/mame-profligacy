@@ -3724,6 +3724,13 @@ void korgprophecy_state::h8_dsp_w8(offs_t offset, u8 data)
 	if (host_slot < 0 || host_slot > 2)
 		return;
 	const int dsp = m_dsp_host_map[host_slot];
+	if (m_trace_h8_control_events)
+	{
+		const double now = machine().time().as_double();
+		if (now >= m_trace_h8_control_start && now <= m_trace_h8_control_end)
+			logerror("KPROP_H8DSP,T=%.9f,EV=HOSTW,PC=%06X,A=%06X,SLOT=%d,DSP=%d,D=%02X\n",
+				now, u32(m_subcpu->pc()), u32(offset), host_slot, dsp, unsigned(data));
+	}
 	m_dsp_strobe_last_target = dsp;
 	tms57002_device *const target = (dsp == 0) ? &*m_dsp1 : (dsp == 1) ? &*m_dsp2 : &*m_dsp3;
 	target->data_w(data);
