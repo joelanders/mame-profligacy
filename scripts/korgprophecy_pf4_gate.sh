@@ -9,8 +9,10 @@ cd "$ROOT_DIR"
 cmd=(
 	/usr/bin/python3 scripts/korgprophecy_pf4_equivalence.py
 	--binary "${KPROP_GATE_MAME:-./propmin}"
+	--system "${KPROP_GATE_SYSTEM:-korgpro20}"
 	--rompath "${KPROP_GATE_ROMPATH:-../mame/00-roms}"
 	--output "${KPROP_GATE_OUT:-/tmp/kprop_pf4_gate}"
+	--require-mode-conflict
 )
 
 if [[ -d "${KPROP_GATE_NVRAM:-}" ]]; then

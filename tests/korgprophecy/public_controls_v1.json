@@ -77,7 +77,8 @@
         "KPROP_GATE_NVRAM",
         "KPROP_GATE_OUT",
         "KPROP_GATE_REQUIRE_ARM64",
-        "KPROP_GATE_ROMPATH"
+        "KPROP_GATE_ROMPATH",
+        "KPROP_GATE_SYSTEM"
       ]
     },
     "emitted_log_or_compile_label": {

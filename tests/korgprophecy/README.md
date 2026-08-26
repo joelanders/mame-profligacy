@@ -87,15 +87,17 @@ equivalence gate:
 python3 scripts/korgprophecy_lifecycle_equivalence.py \
   --reference-bin /path/to/research/propmin \
   --candidate-bin ./propmin \
-  --rompath /path/to/00-roms
+  --rompath /path/to/00-roms \
+  --reference-source-commit FULL_40_HEX_COMMIT \
+  --output /new/lifecycle-receipt.json
 ```
 
-At clean integration revision `99caaa8dec5`, the research and clean builds
-produce the same 460 DSP1 serial lifecycle rows across the 0.174..0.177 second
-boot/PLOAD window. The earlier four-row discrepancy was caused by the stale
-legacy V55 board transport and closed when the manual-faithful UART0/INTST0 path
-became the clean shipping default. This remains an equivalence gate rather than
-a generated hardware golden: any future mismatch stays red.
+The runner requires the candidate source tree to be clean, verifies both full
+source commit IDs, and writes a receipt containing source, runner, and binary
+hashes plus the exact row counts and canonical trace digests. It deliberately
+does not copy the ROM path or serial trace payload into the receipt. This
+remains an equivalence gate rather than a generated hardware golden: any future
+mismatch stays red.
 
 ## V55 UART baud generators
 
