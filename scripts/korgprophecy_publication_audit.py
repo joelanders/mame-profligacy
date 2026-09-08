@@ -32,6 +32,9 @@ ALLOWED_EXACT = {
     # korgprophecy.cpp so the public build does not require a redistributed ROM.
     "src/devices/video/hd44780.cpp",
     "src/devices/video/hd44780.h",
+    # Host-selected mixer delivery period; the default preserves MAME's cadence.
+    "src/emu/sound.cpp",
+    "src/osd/osdepend.h",
     "src/mame/korg/korgprophecy.cpp",
     "src/mame/mame.lst",
     "src/mame/skeleton/tms57002test.cpp",
