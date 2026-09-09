@@ -11,6 +11,9 @@ uint8_t nec_common_device::start_rep()
 		case 0x2e:  m_seg_prefix=true; m_prefix_base=Sreg(PS)<<4;     next = fetchop();  CLK(2); break;
 		case 0x36:  m_seg_prefix=true; m_prefix_base=Sreg(SS)<<4;     next = fetchop();  CLK(2); break;
 		case 0x3e:  m_seg_prefix=true; m_prefix_base=Sreg(DS0)<<4;    next = fetchop();  CLK(2); break;
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+		case 0xf1:  if (m_v55_extensions) { m_iram_prefix = true; next = fetchop(); CLK(2); } break;
+#endif
 	}
 
 	return next;
@@ -20,6 +23,12 @@ void nec_common_device::cont_rep()
 {
 	m_ip = m_rep_ip;
 	m_seg_prefix = bool(BIT(m_rep_params, 2));
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+	// A timeslice-suspended REP must resume with the V55 F1 IRAM prefix it
+	// started with, or the remaining iterations hit external memory instead
+	// of the register-bank file.
+	m_iram_prefix = bool(BIT(m_rep_params, 3));
+#endif
 
 	const uint8_t opcode = m_rep_params & 3;
 	const uint8_t next = m_rep_params >> 8 & 0xff;
@@ -57,9 +66,16 @@ void nec_common_device::do_repnc(uint8_t next)
 	if (c && !CF) {
 		m_rep_ip = m_ip;
 		m_ip = m_prev_ip;
-		m_rep_params = next << 8 | 0 | (m_seg_prefix ? 4 : 0);
+		m_rep_params = next << 8 | 0 | (m_seg_prefix ? 4 : 0)
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+			| (m_iram_prefix ? 8 : 0)
+#endif
+			;
 	}
 	m_seg_prefix=false;
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+	m_iram_prefix=false;
+#endif
 }
 
 void nec_common_device::do_repc(uint8_t next)
@@ -85,9 +101,16 @@ void nec_common_device::do_repc(uint8_t next)
 	if (c && CF) {
 		m_rep_ip = m_ip;
 		m_ip = m_prev_ip;
-		m_rep_params = next << 8 | 1 | (m_seg_prefix ? 4 : 0);
+		m_rep_params = next << 8 | 1 | (m_seg_prefix ? 4 : 0)
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+			| (m_iram_prefix ? 8 : 0)
+#endif
+			;
 	}
 	m_seg_prefix=false;
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+	m_iram_prefix=false;
+#endif
 }
 
 void nec_common_device::do_repne(uint8_t next)
@@ -113,9 +136,16 @@ void nec_common_device::do_repne(uint8_t next)
 	if (c && !(ZF && ((next & 0x86) == 0x86))) {
 		m_rep_ip = m_ip;
 		m_ip = m_prev_ip;
-		m_rep_params = next << 8 | 2 | (m_seg_prefix ? 4 : 0);
+		m_rep_params = next << 8 | 2 | (m_seg_prefix ? 4 : 0)
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+			| (m_iram_prefix ? 8 : 0)
+#endif
+			;
 	}
 	m_seg_prefix=false;
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+	m_iram_prefix=false;
+#endif
 }
 
 void nec_common_device::do_repe(uint8_t next)
@@ -141,9 +171,16 @@ void nec_common_device::do_repe(uint8_t next)
 	if (c && !(!ZF && ((next & 0x86) == 0x86))) {
 		m_rep_ip = m_ip;
 		m_ip = m_prev_ip;
-		m_rep_params = next << 8 | 3 | (m_seg_prefix ? 4 : 0);
+		m_rep_params = next << 8 | 3 | (m_seg_prefix ? 4 : 0)
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+			| (m_iram_prefix ? 8 : 0)
+#endif
+			;
 	}
 	m_seg_prefix=false;
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+	m_iram_prefix=false;
+#endif
 }
 
 OP( 0x00, i_add_br8  ) { DEF_br8;   ADDB;   PutbackRMByte(ModRM,dst);   CLKM(2,2,2,16,16,7);        }
@@ -184,6 +221,17 @@ OP( 0x0f, i_pre_nec  ) { uint32_t ModRM, tmp, tmp2;
 
 		case 0x20 : ADD4S; CLKS(7,7,2); break;
 		case 0x22 : SUB4S; CLKS(7,7,2); break;
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+		case 0x25 :
+			if (m_v55_extensions)
+			{
+				v55_movspa();
+				CLK(16);
+			}
+			else
+				logerror("%06x: Unknown V55 instruction\n", PC());
+			break;
+#endif
 		case 0x26 : CMP4S; CLKS(7,7,2); break;
 		case 0x28 : ModRM = fetch(); tmp = GetRMByte(ModRM); tmp <<= 4; tmp |= Breg(AL) & 0xf; Breg(AL) = (Breg(AL) & 0xf0) | ((tmp>>8)&0xf); tmp &= 0xff; PutbackRMByte(ModRM,tmp); CLKM(13,13,9,28,28,15); break;
 		case 0x2a : ModRM = fetch(); tmp = GetRMByte(ModRM); tmp2 = (Breg(AL) & 0xf)<<4; Breg(AL) = (Breg(AL) & 0xf0) | (tmp&0xf); tmp = tmp2 | (tmp>>4);   PutbackRMByte(ModRM,tmp); CLKM(17,17,13,32,32,19); break;
@@ -276,6 +324,28 @@ OP( 0x0f, i_pre_nec  ) { uint32_t ModRM, tmp, tmp2;
 			} else {
 				CLKS(52, 44, 62);
 			}
+			break;
+		case 0x91 :
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+			if (m_v55_extensions)
+			{
+				v55_retrbi();
+				CLK(12);
+			}
+			else
+#endif
+				logerror("%06x: Unknown V20 instruction\n",PC());
+			break;
+		case 0x92 :
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+			if (m_v55_extensions)
+			{
+				v55_fint();
+				CLK(2);
+			}
+			else
+#endif
+				logerror("%06x: Unknown V20 instruction\n",PC());
 			break;
 		case 0xe0 : BRKXA(true); CLK(12); break;
 		case 0xf0 : BRKXA(false); CLK(12); break;
@@ -734,6 +804,22 @@ OP( 0xee, i_outdxal  ) { write_port_byte(Wreg(DW), Breg(AL)); CLKS(8,8,3);  }
 OP( 0xef, i_outdxax  ) { write_port_word(Wreg(DW), Wreg(AW)); CLKW(12,12,5,12,8,3,Wreg(DW)); }
 
 OP( 0xf0, i_lock     ) { LOGMASKED(LOG_BUSLOCK, "%06x: Warning - BUSLOCK\n",PC()); m_no_interrupt=1; CLK(2); }
+#ifdef NEC_CORE_HAS_V55_EXTENSIONS
+OP( 0xf1, i_v55_iram )
+{
+	if (m_v55_extensions)
+	{
+		m_iram_prefix = true;
+		CLK(2);
+		(this->*s_nec_instruction[fetchop()])();
+		m_iram_prefix = false;
+	}
+	else
+	{
+		i_invalid();
+	}
+}
+#endif
 OP( 0xf2, i_repne    ) { do_repne(start_rep()); }
 OP( 0xf3, i_repe     ) { do_repe(start_rep()); }
 OP( 0xf4, i_hlt ) { m_halted=1; m_icount=0; }

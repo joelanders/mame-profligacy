@@ -1,0 +1,75 @@
+name: Korg Prophecy no-ROM gates
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  no-rom-unix:
+    name: no-rom-${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: macos
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Include the pinned upstream and public-history bases required by
+          # the topology audit without cloning MAME's complete history.
+          fetch-depth: 32
+          # The publication audit requires the linear public history. GitHub's
+          # pull_request default is a synthetic merge commit, so validate the
+          # proposed branch tip explicitly while retaining github.sha on push.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libfontconfig-dev libasound2-dev libxinerama-dev libxi-dev
+      - name: Install macOS build dependency
+        if: runner.os == 'macOS'
+        run: brew install sdl2
+      - name: Build and run public gates
+        env:
+          JOBS: 4
+        run: ./scripts/korgprophecy_no_rom_gate.sh --content-only
+
+  no-rom-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2.31.1
+        with:
+          msystem: UCRT64
+          install: git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-x86_64-libc++ mingw-w64-ucrt-x86_64-sdl3
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 32
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build and run public gates
+        env:
+          ARCHOPTS: "-fuse-ld=lld"
+          JOBS: 3
+          OSD: windows
+          OVERRIDE_AR: llvm-ar
+          OVERRIDE_CC: gcc
+          OVERRIDE_CXX: g++
+          PYTHON: python
+          USE_SDL3: 1
+        run: ./scripts/korgprophecy_no_rom_gate.sh --content-only

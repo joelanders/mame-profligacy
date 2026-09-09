@@ -126,7 +126,7 @@ DEFINE_DEVICE_TYPE(V33,  v33_device,  "v33",  "NEC V33")
 DEFINE_DEVICE_TYPE(V33A, v33a_device, "v33a", "NEC V33A")
 
 
-nec_common_device::nec_common_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, bool is_16bit, uint8_t prefetch_size, uint8_t prefetch_cycles, uint32_t chip_type, bool has_div_quirk, address_map_constructor internal_port_map)
+nec_common_device::nec_common_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, bool is_16bit, uint8_t prefetch_size, uint8_t prefetch_cycles, uint32_t chip_type, bool has_div_quirk, address_map_constructor internal_port_map, bool v55_extensions)
 	: cpu_device(mconfig, type, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_LITTLE, is_16bit ? 16 : 8, chip_type == V33_TYPE ? 24 : 20, 0, 20, chip_type == V33_TYPE ? 14 : 0)
 	, m_io_config("io", ENDIANNESS_LITTLE, is_16bit ? 16 : 8, 16, 0, internal_port_map)
@@ -134,6 +134,12 @@ nec_common_device::nec_common_device(const machine_config &mconfig, device_type 
 	, m_prefetch_cycles(prefetch_cycles)
 	, m_chip_type(chip_type)
 	, m_has_div_quirk(has_div_quirk)
+	, m_v55_extensions(v55_extensions)
+	, m_ds2(0)
+	, m_ds3(0)
+	, m_v55_rb(15)
+	, m_iram_prefix(false)
+	, m_iram{}
 	, m_v33_transtable(*this, "v33_transtable")
 {
 }
@@ -158,12 +164,234 @@ device_memory_interface::space_config_vector nec_common_device::memory_space_con
 	};
 }
 
+u16 nec_common_device::debug_psw_value() const
+{
+	u8 parity = u8(m_ParityVal);
+	parity ^= parity >> 4;
+	parity ^= parity >> 2;
+	parity ^= parity >> 1;
+
+	return u16(
+			(m_CarryVal ? 0x0001 : 0x0000) |
+			0x0002 |
+			((!(parity & 1)) ? 0x0004 : 0x0000) |
+			(m_AuxVal ? 0x0010 : 0x0000) |
+			((m_ZeroVal == 0) ? 0x0040 : 0x0000) |
+			((m_SignVal < 0) ? 0x0080 : 0x0000) |
+			(m_TF ? 0x0100 : 0x0000) |
+			(m_IF ? 0x0200 : 0x0000) |
+			(m_DF ? 0x0400 : 0x0000) |
+			(m_OverVal ? 0x0800 : 0x0000));
+}
+
+namespace {
+
+enum : u8
+{
+	V55_DS2_FILE = 0,
+	V55_DS3_VPC_FILE = 1,
+	V55_PSW_SAVE_FILE = 2,
+	V55_PC_SAVE_FILE = 3,
+	V55_DS0_FILE = 4,
+	V55_SS_FILE = 5,
+	V55_PS_FILE = 6,
+	V55_DS1_FILE = 7,
+	V55_IY_FILE = 8,
+	V55_IX_FILE = 9,
+	V55_BP_FILE = 10,
+	V55_SP_FILE = 11,
+	V55_BW_FILE = 12,
+	V55_DW_FILE = 13,
+	V55_CW_FILE = 14,
+	V55_AW_FILE = 15
+};
+
+}
+
+u16 nec_common_device::v55_file_word(u8 bank, u8 offset) const
+{
+	const u16 base = (bank & 0x0f) << 5;
+	const u16 addr = base + (u16(offset & 0x0f) << 1);
+	return u16(m_iram[addr & 0x1ff] | (m_iram[(addr + 1) & 0x1ff] << 8));
+}
+
+void nec_common_device::v55_set_file_word(u8 bank, u8 offset, u16 data)
+{
+	const u16 base = (bank & 0x0f) << 5;
+	const u16 addr = base + (u16(offset & 0x0f) << 1);
+	m_iram[addr & 0x1ff] = u8(data & 0xff);
+	m_iram[(addr + 1) & 0x1ff] = u8(data >> 8);
+}
+
+u16 nec_common_device::v55_compress_psw() const
+{
+	u8 parity = BYTE(m_ParityVal);
+	parity ^= parity >> 4;
+	parity ^= parity >> 2;
+	parity ^= parity >> 1;
+
+	return u16(
+			((m_v55_rb & 0x0f) << 12) |
+			((m_OverVal ? 1 : 0) << 11) |
+			((m_DF ? 1 : 0) << 10) |
+			((m_IF ? 1 : 0) << 9) |
+			((m_TF ? 1 : 0) << 8) |
+			((m_SignVal < 0 ? 1 : 0) << 7) |
+			((m_ZeroVal == 0 ? 1 : 0) << 6) |
+			((m_AuxVal ? 1 : 0) << 4) |
+			((!(parity & 1) ? 1 : 0) << 2) |
+			(m_CarryVal ? 1 : 0));
+}
+
+void nec_common_device::v55_expand_psw(u16 psw)
+{
+	m_CarryVal = psw & 0x0001;
+	m_ParityVal = !BIT(psw, 2);
+	m_AuxVal = psw & 0x0010;
+	m_ZeroVal = BIT(psw, 6) ? 0 : 1;
+	m_SignVal = BIT(psw, 7) ? -1 : 0;
+	m_TF = BIT(psw, 8);
+	m_IF = BIT(psw, 9);
+	m_DF = BIT(psw, 10);
+	m_OverVal = BIT(psw, 11);
+	m_MF = 1;
+}
+
+void nec_common_device::v55_store_current_bank()
+{
+	const u8 bank = m_v55_rb & 0x0f;
+
+	v55_set_file_word(bank, V55_DS2_FILE, m_ds2);
+	v55_set_file_word(bank, V55_DS3_VPC_FILE, m_ds3);
+	v55_set_file_word(bank, V55_DS0_FILE, Sreg(DS0));
+	v55_set_file_word(bank, V55_SS_FILE, Sreg(SS));
+	v55_set_file_word(bank, V55_PS_FILE, Sreg(PS));
+	v55_set_file_word(bank, V55_DS1_FILE, Sreg(DS1));
+	v55_set_file_word(bank, V55_IY_FILE, Wreg(IY));
+	v55_set_file_word(bank, V55_IX_FILE, Wreg(IX));
+	v55_set_file_word(bank, V55_BP_FILE, Wreg(BP));
+	v55_set_file_word(bank, V55_SP_FILE, Wreg(SP));
+	v55_set_file_word(bank, V55_BW_FILE, Wreg(BW));
+	v55_set_file_word(bank, V55_DW_FILE, Wreg(DW));
+	v55_set_file_word(bank, V55_CW_FILE, Wreg(CW));
+	v55_set_file_word(bank, V55_AW_FILE, Wreg(AW));
+}
+
+void nec_common_device::v55_load_bank(u8 bank)
+{
+	m_v55_rb = bank & 0x0f;
+
+	m_ds2 = v55_file_word(m_v55_rb, V55_DS2_FILE);
+	m_ds3 = v55_file_word(m_v55_rb, V55_DS3_VPC_FILE);
+	Sreg(DS0) = v55_file_word(m_v55_rb, V55_DS0_FILE);
+	Sreg(SS) = v55_file_word(m_v55_rb, V55_SS_FILE);
+	Sreg(PS) = v55_file_word(m_v55_rb, V55_PS_FILE);
+	Sreg(DS1) = v55_file_word(m_v55_rb, V55_DS1_FILE);
+	Wreg(IY) = v55_file_word(m_v55_rb, V55_IY_FILE);
+	Wreg(IX) = v55_file_word(m_v55_rb, V55_IX_FILE);
+	Wreg(BP) = v55_file_word(m_v55_rb, V55_BP_FILE);
+	Wreg(SP) = v55_file_word(m_v55_rb, V55_SP_FILE);
+	Wreg(BW) = v55_file_word(m_v55_rb, V55_BW_FILE);
+	Wreg(DW) = v55_file_word(m_v55_rb, V55_DW_FILE);
+	Wreg(CW) = v55_file_word(m_v55_rb, V55_CW_FILE);
+	Wreg(AW) = v55_file_word(m_v55_rb, V55_AW_FILE);
+}
+
+void nec_common_device::v55_interrupt_bankswitch(u8 bank)
+{
+	const u16 saved_psw = v55_compress_psw();
+	const u16 saved_pc = m_ip;
+
+	m_rep_params = 0;
+	m_seg_prefix = false;
+	m_iram_prefix = false;
+
+	v55_store_current_bank();
+	v55_load_bank(bank & 0x0f);
+	v55_set_file_word(m_v55_rb, V55_PSW_SAVE_FILE, saved_psw);
+	v55_set_file_word(m_v55_rb, V55_PC_SAVE_FILE, saved_pc);
+	m_IF = 0;
+	m_TF = 0;
+	m_prev_ip = m_ip = v55_file_word(m_v55_rb, V55_DS3_VPC_FILE);
+	CHANGE_PC;
+}
+
+void nec_common_device::v55_retrbi()
+{
+	const u8 current_bank = m_v55_rb & 0x0f;
+	const u16 saved_psw = v55_file_word(current_bank, V55_PSW_SAVE_FILE);
+	const u16 saved_pc = v55_file_word(current_bank, V55_PC_SAVE_FILE);
+	const u8 return_bank = u8((saved_psw >> 12) & 0x0f);
+
+	v55_store_current_bank();
+	v55_load_bank(return_bank);
+	v55_expand_psw(saved_psw);
+	m_prev_ip = m_ip = saved_pc;
+	CHANGE_PC;
+}
+
+void nec_common_device::v55_fint()
+{
+	m_no_interrupt = 1;
+}
+
+void nec_common_device::v55_movspa()
+{
+	const u8 old_bank = u8((v55_file_word(m_v55_rb, V55_PSW_SAVE_FILE) >> 12) & 0x0f);
+	Sreg(SS) = v55_file_word(old_bank, V55_SS_FILE);
+	Wreg(SP) = v55_file_word(old_bank, V55_SP_FILE);
+	v55_set_file_word(m_v55_rb, V55_SS_FILE, Sreg(SS));
+	v55_set_file_word(m_v55_rb, V55_SP_FILE, Wreg(SP));
+}
+
+bool nec_common_device::handle_special_int_ack()
+{
+	return false;
+}
+
+u8 nec_common_device::mem_read_byte(offs_t a)
+{
+	if (m_iram_prefix)
+		return m_iram[a & 0x1ff];
+
+	return m_program->read_byte((m_chip_type == V33_TYPE) ? v33_translate(a) : a);
+}
+
+u16 nec_common_device::mem_read_word(offs_t a)
+{
+	if (m_iram_prefix)
+		return u16(m_iram[a & 0x1ff] | (m_iram[(a + 1) & 0x1ff] << 8));
+
+	return m_program->read_word_unaligned((m_chip_type == V33_TYPE) ? v33_translate(a) : a);
+}
+
+void nec_common_device::mem_write_byte(offs_t a, u8 v)
+{
+	if (m_iram_prefix)
+		m_iram[a & 0x1ff] = v;
+	else
+		m_program->write_byte((m_chip_type == V33_TYPE) ? v33_translate(a) : a, v);
+}
+
+void nec_common_device::mem_write_word(offs_t a, u16 v)
+{
+	if (m_iram_prefix)
+	{
+		m_iram[a & 0x1ff] = u8(v & 0xff);
+		m_iram[(a + 1) & 0x1ff] = u8((v >> 8) & 0xff);
+	}
+	else
+	{
+		m_program->write_word_unaligned((m_chip_type == V33_TYPE) ? v33_translate(a) : a, v);
+	}
+}
+
 
 /* FIXME: Need information about prefetch size and cycles for V33.
  * complete guess below, nbbatman will not work
  * properly without. */
-v33_base_device::v33_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_port_map)
-	: nec_common_device(mconfig, type, tag, owner, clock, true, 6, 1, V33_TYPE, false, internal_port_map)
+v33_base_device::v33_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_port_map, bool v55_extensions)
+	: nec_common_device(mconfig, type, tag, owner, clock, true, 6, 1, V33_TYPE, false, internal_port_map, v55_extensions)
 {
 }
 
@@ -316,6 +544,13 @@ void nec_common_device::device_reset()
 	Sreg(SS) = 0;
 	Sreg(DS0) = 0;
 	Sreg(DS1) = 0;
+	m_ds2 = 0;
+	m_ds3 = 0;
+	m_v55_rb = m_v55_extensions ? 15 : 0;
+	m_iram_prefix = false;
+	m_iram.fill(0);
+	if (m_v55_extensions)
+		v55_store_current_bank();
 
 	CHANGE_PC;
 }
@@ -374,6 +609,9 @@ void nec_common_device::external_int()
 	}
 	else if (m_pending_irq)
 	{
+		if (handle_special_int_ack())
+			return;
+
 		/* the actual vector is retrieved after pushing flags */
 		/* and clearing the IF */
 		nec_interrupt((uint32_t)-1, INT_IRQ);
@@ -386,7 +624,9 @@ void nec_common_device::external_int()
 /*                             OPCODES                                      */
 /****************************************************************************/
 
+#define NEC_CORE_HAS_V55_EXTENSIONS 1
 #include "necinstr.hxx"
+#undef NEC_CORE_HAS_V55_EXTENSIONS
 #include "nec80inst.hxx"
 
 /*****************************************************************************/
@@ -481,6 +721,11 @@ void nec_common_device::device_start()
 
 	save_item(NAME(m_regs.w));
 	save_item(NAME(m_sregs));
+	save_item(NAME(m_ds2));
+	save_item(NAME(m_ds3));
+	save_item(NAME(m_v55_rb));
+	save_item(NAME(m_iram_prefix));
+	save_item(NAME(m_iram));
 
 	save_item(NAME(m_ip));
 	save_item(NAME(m_prev_ip));
@@ -642,7 +887,6 @@ void nec_common_device::execute_run()
 	while(m_icount>0)
 	{
 		m_prev_ip = m_ip;
-
 		// Dispatch IRQ
 		if (m_pending_irq && m_no_interrupt==0)
 		{

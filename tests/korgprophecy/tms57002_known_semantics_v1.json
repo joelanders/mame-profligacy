@@ -1,0 +1,168 @@
+{
+  "schema": "tms57002-known-semantics-corpus-v1",
+  "suite_id": "known-semantics-smoke-v1",
+  "claim": "Each case is a self-contained instruction-level check whose exact result is backed by retained TMS57002 silicon evidence.",
+  "current_execution": "interpreter via debug_run_cycles; x86 JIT semantic paths are ported and compile-checked but require an x86 runtime gate",
+  "cases": [
+    {
+      "id": "aovm-neg-abs-int32-min",
+      "mode": "aovm_neg_abs",
+      "expected_checks": 24,
+      "semantics": [
+        "RAOM NEG/ABS(INT32_MIN) wraps to INT32_MIN and sets AOV",
+        "SAOM NEG/ABS(INT32_MIN) clamps to INT32_MAX and sets AOV",
+        "ordinary NEG/ABS values do not spuriously set AOV"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-26_d0c06_aovm_fix_and_regression.md",
+        "private-ledger:sol:2026-07-26_standalone_conformance_evidence/d0c06-silicon-grade.json",
+        "private-ledger:sol:2026-07-26_d0c06_direct_observer_assets/manifest.json"
+      ],
+      "research_fix": "05b87bd80521439ae12b06eca20dfd70cdc1b502"
+    },
+    {
+      "id": "mac-a-d-full-width-port",
+      "mode": "mac_a_d_port",
+      "expected_checks": 2,
+      "semantics": [
+        "MAC A,D routes full-width AACC to the multiplier C input"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-25_d1_d2_d3_silicon_discrepancies_solved.md",
+        "private-ledger:opus:2026-07-12_SOLVED_dsp2_filter_bitexact_multiplier_a_port.md"
+      ],
+      "research_fixes": [
+        "4ac08c32d0f",
+        "05b87bd80521439ae12b06eca20dfd70cdc1b502"
+      ]
+    },
+    {
+      "id": "multiplier-a-port-drops-low-byte",
+      "mode": "mpy_a_port",
+      "expected_checks": 4,
+      "semantics": [
+        "MPY, MAC, and MACS C,A route AACC through the multiplier's 24-bit A input",
+        "The low eight AACC bits are discarded after SFAO and before signed multiplication",
+        "Negative operands are masked in two's-complement representation rather than rounded toward zero"
+      ],
+      "evidence": [
+        "private-ledger:opus:2026-07-12_SOLVED_dsp2_filter_bitexact_multiplier_a_port.md",
+        "private-ledger:bench-sync-box:2026-07-15_ORACLE_REQUEST_ca_increment_timing_and_smhc_collision.md",
+        "private-ledger:sol:2026-07-26_dsp2_standalone_filter_precision_campaign.md"
+      ],
+      "research_fixes": [
+        "4ac08c32d0f",
+        "684e790e7d5",
+        "05b87bd80521439ae12b06eca20dfd70cdc1b502"
+      ]
+    },
+    {
+      "id": "sequential-pc-wrap-halts-until-sync",
+      "mode": "pc_wrap_halt",
+      "expected_checks": 6,
+      "semantics": [
+        "Sequential PC wrap from 0xff to 0x00 completes one 256-word sample pass and enters IDLE",
+        "The next SYNC releases the wrap halt and execution resumes at PC 0",
+        "Explicit branches to PC 0 do not take the sequential-wrap halt path"
+      ],
+      "evidence": [
+        "private-ledger:fable:2026-07-11_SYNTHESIS_effects_on_chainhead_h8_exonerated.md",
+        "private-ledger:fable:2026-07-11_HANDOVER_opus_the_last_mile.md",
+        "private-ledger:sol:2026-07-24_tms57002_32_program_campaign.md"
+      ],
+      "research_fixes": [
+        "ab7fe1982cdfff5c93d7edbe06a5724c3074210c"
+      ]
+    },
+    {
+      "id": "smld-raw-low-port",
+      "mode": "smld_raw_port",
+      "expected_checks": 4,
+      "semantics": [
+        "SMLD stores raw MACC[23:0] independently of SFMO"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-25_d1_d2_d3_silicon_discrepancies_solved.md"
+      ],
+      "research_fixes": [
+        "44e255ea05e",
+        "05b87bd80521439ae12b06eca20dfd70cdc1b502"
+      ]
+    },
+    {
+      "id": "mpy-dis-incoming-word",
+      "mode": "mpy_dis_incoming",
+      "expected_checks": 4,
+      "semantics": [
+        "A DMEM-reading MPY co-issued with DIS consumes the incoming serial word written by DIS"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-24_tms57002_32_program_campaign.md",
+        "external:00-dsp-oracle/parallel-mpy-dis-oldnew-* (4 runs, 312 exact words)"
+      ],
+      "research_fix": "25314beec115f3789d7d2431d56945f600a29345"
+    },
+    {
+      "id": "domh-movm-rounded-positive-rail",
+      "mode": "domh_movm_rounding",
+      "expected_checks": 8,
+      "semantics": [
+        "MOVM positive saturation is masked by the active RND width",
+        "RND20 emits 0x7ffff0 and RND16 emits 0x7fff00 for raw 0x7fffffff"
+      ],
+      "evidence": [
+        "external:00-dsp-oracle/20260531-221520-final-domh-movm-rnd20-pos-7fffffff",
+        "external:00-dsp-oracle/20260531-221735-final-domh-movm-rnd16-pos-7fffffff",
+        "private-ledger:fable:2026-07-14_voice_campaign_assets/oracle_diff.py (436/436 sweep)"
+      ],
+      "research_fixes": [
+        "f27d6a775dcc5631bb997c650d36782821f563a4 (clip tables; incomplete caller coverage)",
+        "companion core commit: route DOMH through %mo and matching x86/a64 emitters"
+      ]
+    },
+    {
+      "id": "xram-rde-store-before-latch",
+      "mode": "rde_latency",
+      "expected_checks": 5,
+      "semantics": [
+        "For RDE co-issued with SACC, the category-2 store retires before the XRAM request latches its CMEM address",
+        "A second co-issued RDE observes the first store's updated address state"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-28_factory_xram_adversarial_silicon_and_general_rule.md",
+        "private-ledger:sol:2026-07-28_factory_xram_adversarial_suite/hardware/grade.json",
+        "private-ledger:sol:2026-07-28_factory_xram_adversarial_suite/mame-references-after-general-rule/summary.json"
+      ],
+      "research_fix": "05b87bd8052 (reconciled micro-oracle and finalized general co-issue rule)"
+    },
+    {
+      "id": "xram-wre-store-before-latch",
+      "mode": "wre_smhd",
+      "expected_checks": 4,
+      "semantics": [
+        "For WRE co-issued with SMHD, the category-2 store retires before XWR latches its DMEM payload"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-28_factory_xram_adversarial_silicon_and_general_rule.md",
+        "private-ledger:sol:2026-07-28_factory_xram_adversarial_suite/hardware/grade.json",
+        "private-ledger:sol:2026-07-28_factory_xram_adversarial_suite/mame-references-after-general-rule/summary.json"
+      ],
+      "research_fix": "05b87bd8052 (reconciled micro-oracle and finalized general co-issue rule)"
+    },
+    {
+      "id": "serial-left-dos-deadline",
+      "mode": "dos_deadline",
+      "expected_checks": 4,
+      "semantics": [
+        "A left-subframe DOS at program slot FB is accepted for the current frame",
+        "Left serial lanes have the later silicon-proven halfcycle deadline"
+      ],
+      "evidence": [
+        "private-ledger:sol:2026-07-28_SOL_unified_serial_model_a07_a11_both_exact.md",
+        "private-ledger:sol:2026-07-29_SOL_FACTORY15_COMPLETE_all_programs_bit_exact.md",
+        "private-ledger:sol:2026-07-29_factory15_unified_queue/final-scoreboard.json"
+      ],
+      "research_fix": "05b87bd8052 (left-subframe DOS deadline finalized from factory silicon corpus)"
+    }
+  ]
+}

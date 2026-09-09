@@ -67,6 +67,23 @@ public:
 
 	template<int Sci> void sci_rx_w(int state) { m_sci[Sci]->do_rx_w(state); }
 	template<int Sci> void sci_clk_w(int state) { m_sci[Sci]->do_clk_w(state); }
+	template<int Sci> u64 debug_sci_rx_error_count() const { return m_sci[Sci]->debug_rx_error_count(); }
+	template<int Sci> u64 debug_sci_rx_frames() const { return m_sci[Sci]->debug_rx_frames(); }
+	template<int Sci> u64 debug_sci_rx_accepted() const { return m_sci[Sci]->debug_rx_accepted(); }
+	template<int Sci> bool debug_sci_rx_idle() const { return m_sci[Sci]->debug_rx_idle(); }
+	template<int Sci> u64 debug_sci_rx_overruns() const { return m_sci[Sci]->debug_rx_overruns(); }
+	template<int Sci> u64 debug_sci_rx_framing_errors() const { return m_sci[Sci]->debug_rx_framing_errors(); }
+	template<int Sci> u64 debug_sci_rx_parity_errors() const { return m_sci[Sci]->debug_rx_parity_errors(); }
+	template<int Sci> u8 debug_sci_last_rx_error() const { return m_sci[Sci]->debug_last_rx_error(); }
+	template<int Sci> u32 debug_sci_last_rx_error_pc() const { return m_sci[Sci]->debug_last_rx_error_pc(); }
+	template<int Sci> double debug_sci_last_rx_error_time() const { return m_sci[Sci]->debug_last_rx_error_time(); }
+	template<int Sci> double debug_sci_rx_start_time() const { return m_sci[Sci]->debug_rx_start_time(); }
+	template<int Sci> u8 debug_sci_rx_sample_count() const { return m_sci[Sci]->debug_rx_sample_count(); }
+	template<int Sci> double debug_sci_rx_sample_time(u8 index) const { return m_sci[Sci]->debug_rx_sample_time(index); }
+	template<int Sci> u8 debug_sci_rx_sample_state(u8 index) const { return m_sci[Sci]->debug_rx_sample_state(index); }
+	template<int Sci> u8 debug_sci_rx_sample_value(u8 index) const { return m_sci[Sci]->debug_rx_sample_value(index); }
+	template<int Sci> void debug_enable_sci_rx_capture(bool enable) { m_sci[Sci]->debug_enable_rx_capture(enable); }
+	template<int Sci> bool debug_inject_sci_rx_byte(u8 data) { return m_sci[Sci]->debug_inject_rx_byte(data); }
 
 	void nvram_set_battery(int state) { m_nvram_battery = bool(state); } // default is 1 (nvram_enable_backup needs to be true)
 	void nvram_set_default_value(u16 val) { m_nvram_defval = val; } // default is 0
@@ -178,6 +195,7 @@ protected:
 	h8_dtc_device *m_dtc_device;
 	h8_dma_state *m_dma_channel[8];
 	int m_current_dma;
+	int m_dma_bus_owner;
 	h8_dtc_state *m_current_dtc;
 	u64 m_cycles_base;
 
@@ -198,7 +216,7 @@ protected:
 	bool m_has_hc; // GT913's CCR bit 5 is I, not H
 
 	int m_inst_state, m_inst_substate, m_requested_state;
-	int m_icount, m_bcount, m_count_before_instruction_step;
+	int m_icount, m_bcount, m_count_before_instruction_step, m_last_memory_access_cycles;
 	int m_irq_vector, m_taken_irq_vector;
 	int m_irq_level, m_taken_irq_level;
 	bool m_irq_nmi, m_standby_pending;
@@ -218,6 +236,17 @@ protected:
 	virtual int trace_setup();
 	virtual int trapa_setup();
 	virtual void irq_setup() = 0;
+	virtual int reset_processing_cycles() const;
+	virtual int interrupt_priority_cycles() const;
+	virtual void interrupt_priority_complete();
+	virtual bool interrupt_post_accept_prefetch() const;
+	virtual bool internal_phase_checkpointing_enabled() const;
+	virtual void interrupt_instruction_boundary();
+	virtual int dma_bus_acquisition_cycles(int channel) const;
+	virtual int memory_access_cycles(u32 address, int size) const;
+	void begin_dma_bus_cycle(int channel);
+	void charge_memory_access(u32 address, int size);
+	void refund_memory_access();
 
 	u16 read16i(u32 adr);
 	u8 read8(u32 adr);

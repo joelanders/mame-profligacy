@@ -12,9 +12,98 @@
 
 #pragma once
 
+#include <functional>
+#include <string>
+
+namespace tms57002 { class Jit; }   // DSP dynarec (jit/tms57002_jit.h); owned per-device, created lazily
+
 class tms57002_device : public cpu_device, public device_sound_interface
 {
 public:
+	enum class debug_macc_clip_mode : u8
+	{
+		none = 0,
+		rounded,
+		unrounded
+	};
+
+	struct debug_macc_eval_result
+	{
+		s64 value;
+		bool mov;
+	};
+
+	struct debug_snapshot
+	{
+		u64 sound_updates = 0;
+		u8 pc = 0;
+		u8 hpc = 0;
+		u8 ca = 0;
+		u8 id = 0;
+		u8 ba0 = 0;
+		u8 ba1 = 0;
+		u8 rptc = 0;
+		u8 rptc_next = 0;
+		u8 sa = 0;
+		u8 hidx = 0;
+		std::array<u8, 4> host{};
+		u8 allow_update = 0;
+		u32 st0 = 0;
+		u32 st1 = 0;
+		u32 sti = 0;
+		u32 aacc = 0;
+		u64 macc = 0;
+		u64 macc_read = 0;
+		u64 macc_write = 0;
+		u32 creg = 0;
+		u32 xoa = 0;
+		u32 xba = 0;
+		u32 xwr = 0;
+		u32 xrd = 0;
+		u32 txrd = 0;
+		u32 xm_adr = 0;
+		u8 xm_cycles = 0;
+		u8 xm_fetches = 0;
+		std::array<u32, 4> si{};
+		std::array<u32, 4> so{};
+		std::array<u32, 4> serial_input_latch{};
+		std::array<u32, 4> serial_input_active{};
+		std::array<u32, 4> serial_input_frame{};
+		std::array<u32, 4> serial_input_prev_frame{};
+		std::array<u32, 4> serial_input_pending{};
+		u8 serial_input_valid = 0;
+		u8 serial_input_active_valid = 0;
+		u8 serial_input_prev_valid = 0;
+		u8 serial_input_pending_valid = 0;
+		u8 serial_output_pending_valid = 0;
+		u8 pending_pre_transfer = 0;
+		u32 pending_pre_transfer_addr = 0;
+		u32 pending_pre_transfer_value = 0;
+		u8 serial_input_timing_mode = 0;
+		u8 serial_frame_mode = 0;
+		int serial_frame_clocks = 0;
+		int serial_exec_halfcycles = 0;
+		int serial_input_pending_halfcycle = 0;
+		int serial_output_pending_halfcycle = 0;
+		u8 sync_polarity_rising = 0;
+		u8 serial_output_muted = 0;
+		u8 serial_frame_flip_input = 0;
+		u8 serial_frame_flip_output = 0;
+		u8 update_counter_head = 0;
+		u8 update_counter_tail = 0;
+		u8 update_counter_count = 0;
+		u8 update_active = 0;
+		u8 update_address_run = 0;
+		std::array<u32, 256> cmem{};
+		std::array<u32, 256> dmem0{};
+		std::array<u32, 32> dmem1{};
+		std::array<u32, 16> update{};
+		std::array<u8, 16> update_sa{};
+		std::array<u8, 16> update_address_run_for_entry{};
+		std::array<u64, 16> update_enqueue_su{};
+		std::array<u8, 16> update_read_delay_seen{};
+	};
+
 	tms57002_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto dready_callback() { return m_dready_callback.bind(); }
@@ -23,6 +112,337 @@ public:
 
 	u8 data_r();
 	void data_w(u8 data);
+	u32 serial_input(int index) const
+	{
+		if (index < 0 || index >= 4)
+			return 0;
+		if (BIT(m_serial_input_valid, index))
+			return m_serial_input_latch[index];
+		if (BIT(m_serial_input_active_valid, index))
+			return m_serial_input_active[index];
+		return si[index];
+	}
+	u32 serial_output(int index) const { return (index >= 0 && index < 4) ? serial_output_pin(index) : 0; }
+	// Inter-DSP routing tap that bypasses the PC7 mute gate (A/B for whether
+	// hardware mute is DAC-side only; see audit findings Â§3.2).
+	u32 serial_output_unmuted(int index) const;
+	void set_serial_input(int index, u32 value)
+	{
+		if (index >= 0 && index < 4)
+		{
+			m_serial_input_latch[index] = value & 0x00ffffffU;
+			m_serial_input_valid |= u8(1U << index);
+		}
+	}
+	void set_serial_frame_model(bool enable) { m_serial_frame_mode = enable ? serial_frame_mode::lrck_subframe : serial_frame_mode::snapshot; }
+	void set_serial_frame_clocks(int clocks) { m_serial_frame_clocks = clocks > 0 ? clocks : 0; }
+	void set_serial_frame_flip_input(bool enable) { m_serial_frame_flip_input = enable; }
+	void set_serial_frame_flip_output(bool enable) { m_serial_frame_flip_output = enable; }
+	void set_serial_output_write_handoff(bool enable) { m_serial_output_write_handoff = enable; }
+	void set_stream_output_raw(bool enable) { m_stream_output_raw = enable; }
+	// Generic serial-output event observer (SO writes / frame handoffs). Default-unset => no-op, zero
+	// cost. Host drivers install one to observe DSP serial output (e.g. hardware-serial verification)
+	// without an in-core trace or getenv.
+	using serial_output_observer = std::function<void(const char *event, int index, u32 value, int halfcycles, u8 mask)>;
+	void set_serial_output_observer(serial_output_observer cb) { m_serial_output_observer = std::move(cb); }
+	void set_smhc_post_slot(bool enable) { m_smhc_post_slot = enable; }
+	// SMHC stores only the high (24-bit) coefficient; low `bits` bits are forced to
+	// zero on write. Real-silicon behavior (Korg Prophecy ramp-equilibrium bit-exact,
+	// 2026-07-03); 8 = the 32-bit->24-bit truncation. 0 = legacy full macc>>16.
+	virtual ~tms57002_device();   // out-of-line: m_jit's unique_ptr needs the complete Jit type (tms57002.cpp)
+
+	void set_smhc_trunc_bits(int bits) { m_debug_smhc_trunc_bits = bits; }
+	// Machine-config default for the pooled dynarec (the KPROP_DSP_PERFRAME=4 path). OFF for generic
+	// TMS57002 users; the Korg driver turns it on (gated by the 2026-07-07 F6 corpus sweep). The env
+	// still overrides at runtime: 4 = force on, any other value = force interpreter (kill switch).
+	// The pooled backend supports x86-64 and AArch64. Other hosts fall back to
+	// the interpreter automatically (compile returns nullptr).
+	void set_dynarec_default(bool enable) { m_dynarec_default = enable; }
+	// Delay CA post-increment commit by one instruction: a c*+ read returns the
+	// current CA, but the increment only lands after the FOLLOWING instruction's
+	// operand reads. Aligns the voice program's output-mixer gain walk
+	// (lcak 37; mpy c*+; mac d,c*+; mac d,c*; mac d,c*) to one gain per bus
+	// (c37,c37,c38,c39) as the hardware A12 staged image implies, instead of
+	// (c37,c38,c39,c39). ID (d*+) increments are not delayed.
+	void set_ca_inc_delayed(bool enable) { m_ca_inc_delayed = enable; }
+	// abs of the most-negative AACC (0x80000000): saturate to 0x7fffffff
+	// instead of wrapping back to 0x80000000 (MAME historically wraps and only
+	// sets AOV). The Prophecy A12 voice program's decay loop starts from a
+	// -1.0-seeded state; without saturating abs the loop never decays and the
+	// idle voice drones forever (drone investigation, 2026-07-02).
+	void set_abs_saturate(bool enable) { m_abs_saturate = enable; }
+	void set_sync_polarity(int state) { m_sync_polarity_rising = bool(state); }
+	void mute_w(int state) { m_serial_output_muted = !bool(state); }
+	void debug_write_dmem0(u8 index, u32 value) { dmem0[index] = value & 0xffffff; }
+	void debug_write_dmem1(u8 index, u32 value) { dmem1[index & 0x1f] = value & 0xffffff; }
+	void debug_write_cmem(u8 index, u32 value) { cmem[index] = value; }
+	void debug_set_exec_state(u8 pc_value, u8 ca_value, u8 id_value, u8 ba0_value, u8 ba1_value, u32 st0_value, u32 st1_value, u32 sti_value)
+	{
+		pc = pc_value;
+		ca = ca_value;
+		id = id_value;
+		ba0 = ba0_value;
+		ba1 = ba1_value;
+		st0 = st0_value;
+		st1 = st1_value;
+		sti = sti_value;
+		allow_update = 1;
+		update_pc0();
+		update_dready();
+		update_empty();
+	}
+	void debug_set_accumulators(u32 aacc_value, u64 macc_value, u64 macc_read_value, u64 macc_write_value, u32 creg_value)
+	{
+		aacc = aacc_value;
+		macc = s64(macc_value);
+		macc_read = s64(macc_read_value);
+		macc_write = s64(macc_write_value);
+		creg = creg_value;
+	}
+	void debug_set_xmem_state(u32 xoa_value, u32 xba_value, u32 xwr_value, u32 xrd_value, u32 txrd_value, u32 xm_adr_value, u8 xm_cycles_value, u8 xm_fetches_value)
+	{
+		xoa = xoa_value;
+		xba = xba_value;
+		xwr = xwr_value;
+		xrd = xrd_value;
+		txrd = txrd_value;
+		xm_adr = xm_adr_value;
+		xm_cycles = xm_cycles_value;
+		xm_fetches = xm_fetches_value;
+	}
+	void debug_load_program(const u32 *words, u32 count, u32 st0_value, u32 st1_value);
+	void debug_reset_live_state(bool zero_accumulators);
+	void debug_run_cycles(int max_cycles = 1);
+	long debug_pooled_run_count() const;
+	long debug_pooled_cmem_run_count() const;
+	std::array<u32, 4> debug_run_sample_frame(const std::array<u32, 4> &frame, int max_cycles = 4096);
+
+	// --- JIT harness seam (Phase 0) ------------------------------------------
+	// debug_run_sample_frame() split so an external driver (the asmjit JIT) can walk
+	// the loaded program itself and, op by op, replace interpreted stepping with
+	// generated code. jit_step_one() is the trampoline target (run one program
+	// instruction via the interpreter); the rest are the shared frame begin/idle/end.
+	// The interpreter stays the default + the bit-exact oracle (tms57002_jit_test).
+	void jit_begin_frame(const std::array<u32, 4> &frame);          // serial setup + sync_w
+	bool jit_is_idle() const { return (sti & S_IDLE) != 0; }        // program hit `idle`
+	// PLOAD mutates the program image and must always disengage pooled execution.
+	// CLOAD only assembles a coefficient packet in host[]; no CMEM-visible state
+	// changes until the complete packet is queued.  With the guarded CMEM entry
+	// enabled, pooled execution can therefore continue across CLOAD as well as the
+	// subsequent pending-update window.  Keep the old conservative behavior when
+	// that entry is disabled.
+	bool jit_host_loading_unsafe() const
+	{
+		return (sti & IN_PLOAD) || ((sti & IN_CLOAD) && !m_pf4_cmem_deopt);
+	}
+	void jit_step_one() { debug_run_cycles(1); }                    // one program instruction
+	std::array<u32, 4> jit_end_frame()                              // the 4 serial outputs
+	{ return { serial_output_pin(0), serial_output_pin(1), serial_output_pin(2), serial_output_pin(3) }; }
+
+	// Execute one program instruction (one PC's chain + machinery) from chain-head
+	// ipc, returning the next ipc. Trace-free replica of execute_run's per-PC body —
+	// the unit the JIT drives compile-time-unrolled. jit_run_sample_frame runs a whole
+	// frame through it (bit-exact vs debug_run_sample_frame, gated by tms57002_jit_test).
+	int jit_run_chain(int ipc);
+	std::array<u32, 4> jit_run_sample_frame(const std::array<u32, 4> &frame, int max_cycles = 4096);
+	// jit_run_chain decomposed: the JIT unrolls the chain and emits these per micro-op.
+	void jit_pc_pre();                        // xm_step + MACC pipeline
+	void jit_op_exec(unsigned op, const void *icd_ptr);   // the ex_N dispatch (op >= 4)
+	int jit_pc_post(int iipc, int ipc);       // transfer/serial/pc/branch -> next ipc
+	void jit_term(unsigned op) { if (op == 1) ++ca; else if (op == 2) ++id; else if (op == 3) { ++ca; ++id; } }  // chain terminator op<4
+
+	// Compile-time decode-cache access for the asmjit compiler to walk a PC's chain.
+	unsigned jit_inst_op(int ipc) const { return cache.inst[ipc].op; }
+	int jit_inst_next(int ipc) const { return cache.inst[ipc].next; }
+	u64 jit_inst_addr(int ipc) { return reinterpret_cast<u64>(&cache.inst[ipc]); }
+	int jit_decode(u8 p) { u8 save = pc; pc = p; int r = decode_get_pc(); pc = save; return r; }  // decode p's chain head
+	u32 jit_sti() const { return sti; }
+	// Frame-loop driving for the native JIT (icount/idle live on the device).
+	void jit_set_icount(int n) { icount = n > 1 ? n : 1; }
+	int jit_icount() const { return icount; }   // the scheduler's remaining timeslice at the pf4 hook
+	bool jit_running() const { return icount > 0 && !(sti & (S_IDLE | IN_PLOAD)); }
+	int jit_decode_current() { return decode_get_pc(); }
+	int jit_pc() const { return pc; }   // frame-start pc (compile-time anchor for the whole-frame unroll)
+	void jit_set_pc(u8 p) { pc = p; }   // M3: force program-order decode (build_pooled_order forces fall-through)
+	void jit_cache_flush() { cache_flush(); }   // M3: fresh decodes (drop stale/colliding warmup-frame entries)
+	// M3: decode-chaining control for the pooled-order walk. Mode-setters (sfmo/sfai/...) mutate st1's
+	// decode-key fields AT DECODE TIME; with chaining ON, decode_get_pc decodes a whole run of PCs in one
+	// call and over-advances st1 past the current PC. Disabling it makes each decode_get_pc decode EXACTLY
+	// one PC, so a program-order walk sees the correct per-PC st1 (matching the interpreter's decoder).
+	bool jit_disable_chaining() const { return m_disable_decode_chaining; }
+	void jit_set_disable_chaining(bool b) { m_disable_decode_chaining = b; }
+	// M4: program identity for the compile cache. jit_program_version() bumps on each (re)load (cheap
+	// change detection); jit_program_hash() is FNV-1a over the 256 program words (dedups identical
+	// programs across reloads, so a re-loaded patch reuses its compiled frame instead of recompiling).
+	u32 jit_program_version() const { return m_program_version; }
+	u32 dbg_st1() const { return st1; }   // JIT reads st1 mode bits for the compile cache key
+	int jit_smhc_trunc_bits() const { return m_debug_smhc_trunc_bits; }   // fork silicon fix: smhc low-bit truncation (Korg=8)
+	// Silicon has a 32-bit coefficient input and a 24-bit AACC input at the
+	// multiplier. Only c,a forms route AACC through this port; a,d forms route
+	// it through the full-width coefficient input instead.
+	static constexpr u32 mpy_a_operand(u32 a) { return a & 0xffffff00U; }
+	bool jit_abs_saturate() const { return m_abs_saturate; }              // fork silicon fix: abs saturates INT_MIN
+	// DEFINED OUT-OF-LINE in tms57002.cpp — NOT inline. It dereferences `program` (the address_space*),
+	// and the JIT library compiles tms57002.h against the compat emu.h whose device layout differs from
+	// the runtime's; an inline body compiled in the JIT TU would read `program` at the wrong offset and
+	// crash on a runtime-laid-out device (the live machine). The .cpp is compiled with the real layout.
+	u64 jit_program_hash();
+	void jit_run_rest(int ipc) { while (jit_running()) { if (ipc == -1) ipc = decode_get_pc(); ipc = jit_run_chain(ipc); } }  // finish frame via interpreter
+	void jit_finalize_if_idle() { if (serial_cycle_model_enabled() && (sti & S_IDLE)) finalize_serial_output_build(); if (icount > 0) icount = 0; }
+#ifdef TMS_POC_FRAME
+	// PoC ceiling bench: GENERATED straight-line steady-state DSP1 frame (test/poc_dsp1_frame.inc,
+	// included at the end of tms57002.cpp so every helper inlines). Local research artifact.
+	void poc_frame();        // conservative: verbatim interpreter semantics, zero dispatch
+	void poc_frame_fast();   // + the guarded substitutions a runtime JIT would make (the ceiling)
+	// Distinct code copies of the same frame (same source => identical ~82KB footprint each),
+	// so the fused-group experiment can alternate 2-3 large straight-line passes per sample and
+	// see whether they stay resident (L1I 32K / L2 256K) or thrash. See test/tms57002_poc_test.cpp.
+	void poc_frame_b();  void poc_frame_fast_b();
+	void poc_frame_c();  void poc_frame_fast_c();
+	// DENSE point on the code-shape curve: ONE shared table-driven pass (55 op bodies in a
+	// switch, 335-op stream). One code copy, called by all 3 DSP devices in the fused test --
+	// the shape that attacks the distinct-code L2 collapse directly. See test/poc_dsp1_dense.inc.
+	void poc_frame_dense();   // dispatch shape: centralized `switch`
+	void poc_frame_goto();    // dispatch shape: distributed threaded computed-goto (same bodies)
+	// FUSION kernel: ONE shared 84-op switch (union across the real DSP1/2/3 programs) + per-
+	// program step streams. poc_frame_pool(prog) runs program `prog` (0=osc,1=filter,2=fx)
+	// through the one shared pool — 3 devices share one code region. See test/poc_dsp_pool.inc.
+	void poc_frame_pool(int prog);
+	bool poc_diverged = false;   // set if the trace assumption (no branch/repeat) breaks at runtime
+#endif
+	// Member offsets + masks for the JIT to emit native device-state access.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"   // JIT emits native access via __builtin_offsetof; tms57002_device is not standard-layout (device base classes)
+	static u32 jit_off_sti() { return u32(__builtin_offsetof(tms57002_device, sti)); }
+	static u32 jit_off_macc() { return u32(__builtin_offsetof(tms57002_device, macc)); }
+	static u32 jit_off_macc_read() { return u32(__builtin_offsetof(tms57002_device, macc_read)); }
+	static u32 jit_off_macc_write() { return u32(__builtin_offsetof(tms57002_device, macc_write)); }
+	static u32 jit_off_ca() { return u32(__builtin_offsetof(tms57002_device, ca)); }
+	static u32 jit_off_id() { return u32(__builtin_offsetof(tms57002_device, id)); }
+	static u32 jit_off_icount() { return u32(__builtin_offsetof(tms57002_device, icount)); }
+	static u32 jit_off_pc() { return u32(__builtin_offsetof(tms57002_device, pc)); }
+	static u32 jit_off_rptc() { return u32(__builtin_offsetof(tms57002_device, rptc)); }
+	static u32 jit_off_rptc_next() { return u32(__builtin_offsetof(tms57002_device, rptc_next)); }
+	static u32 jit_off_pending_pre_transfer() { return u32(__builtin_offsetof(tms57002_device, m_pending_pre_transfer)); }
+	static u32 jit_off_dmem0() { return u32(__builtin_offsetof(tms57002_device, dmem0)); }
+	static u32 jit_off_dmem1() { return u32(__builtin_offsetof(tms57002_device, dmem1)); }   // dbp=1 bank
+	static u32 jit_off_ba0() { return u32(__builtin_offsetof(tms57002_device, ba0)); }
+	static u32 jit_off_ba1() { return u32(__builtin_offsetof(tms57002_device, ba1)); }
+	static u32 jit_off_st1() { return u32(__builtin_offsetof(tms57002_device, st1)); }
+	static u32 jit_off_xrd() { return u32(__builtin_offsetof(tms57002_device, xrd)); }
+	static u32 jit_off_so() { return u32(__builtin_offsetof(tms57002_device, so)); }   // serial output regs (dos/domh)
+	static constexpr u32 jit_st1_mov() { return ST1_MOV; }
+	static constexpr u32 jit_st1_sfmo() { return ST1_SFMO; }   // sfmo mode field (op 1843 clears it)
+	static constexpr u32 jit_st1_aov() { return ST1_AOV; }     // aacc-overflow flag (%wa saturation)
+	static constexpr u32 jit_st1_aovm() { return ST1_AOVM; }   // aacc-overflow-clamp mode (%wa saturation)
+	static constexpr u32 jit_st1_sfai() { return ST1_SFAI; }   // sfai flag (sfai op set/clear)
+	static constexpr int jit_st1_sfmo_shift() { return ST1_SFMO_SHIFT; }   // sfmo field shift (op 1844-1846)
+	static constexpr u32 jit_st1_cache() { return ST1_CACHE; }   // st1 bits that select op variants (decode key)
+	static constexpr u32 jit_st1_crm() { return ST1_CRM; }         // coefficient-RAM mode field (current_cmem_view)
+	static constexpr u32 jit_st1_crm_16h() { return ST1_CRM_16H; } // crm==1: cmem read -> value & 0xffff0000
+	static constexpr u32 jit_st1_crm_16l() { return ST1_CRM_16L; } // crm==2: cmem read -> value << 16
+	// Remaining ST1_CACHE field masks — used by the F5-refinement consumed-field table
+	// (tms57002_ops.cpp) to map descriptor variant columns onto st1 mode bits.
+	static constexpr u32 jit_st1_sfao() { return ST1_SFAO; }
+	static constexpr u32 jit_st1_sfma() { return ST1_SFMA; }
+	static constexpr u32 jit_st1_rnd_field() { return ST1_RND; }
+	static constexpr u32 jit_st1_movm() { return ST1_MOVM; }
+	static constexpr u32 jit_st1_dbp() { return ST1_DBP; }
+	bool jit_smhd_raw_path() const { return m_debug_smhd_raw_path; }
+	bool jit_smld_raw_path() const { return m_debug_smld_raw_path; }
+	// The pooled (M2) op bodies assume normal render conditions — no pending cmem update (so a cmem
+	// read is a direct cmem[addr]), no debug forces/forwards, no serial cycle model. If any of these
+	// hold, the pooled frame falls back to the (unconditionally-correct) native frame. True == safe to
+	// run the pooled frame for the whole sample. (The live machine / M5 must revisit mid-frame changes.)
+	bool jit_pooled_safe() const {
+		// The deopt mode admits a frame with pending CMEM updates because every CMEM-reading
+		// pooled op guards and re-enters the interpreter until the queue drains.
+		return (update_counter_count == 0 || m_pf4_force_cmem_unsafe || m_pf4_cmem_deopt)
+			&& !m_debug_cmem_force
+			&& !serial_cycle_model_enabled()
+			&& !m_debug_mpy_smhd_forward && !m_debug_lmhd_srbd_forward
+			&& !m_debug_smhd_raw_path && !m_debug_smld_raw_path
+			// ca_inc_delayed: build_pooled_order decodes with chaining DISABLED, and decode_get_pc
+			// merges a carried INC_CA into the CURRENT boundary op when chaining is off — so the
+			// primed chains would differ from the interpreter's chaining-on chains (CA increments one
+			// slot early at carry sites). Pooled must disengage rather than run divergent chains.
+			&& !m_ca_inc_delayed
+			// The pooled mac/mpy bodies bake the base product shifts (>>7/>>14/>>15) at emit time;
+			// the dc/ca extra-shift debug knobs are invisible to them -> disengage when set.
+			&& m_debug_ca_mpy_extra_shift == 0 && m_debug_dc_mpy_extra_shift == 0;
+	}
+	static constexpr u32 jit_s_idle_mask() { return S_IDLE; }
+	static constexpr u32 jit_s_read_mask() { return S_READ; }
+	static constexpr u32 jit_s_write_mask() { return S_WRITE; }
+	static constexpr u32 jit_s_branch_mask() { return S_BRANCH; }
+	static u32 jit_off_aacc() { return u32(__builtin_offsetof(tms57002_device, aacc)); }
+	static u32 jit_off_cmem() { return u32(__builtin_offsetof(tms57002_device, cmem)); }
+	static u32 jit_off_uc_count() { return u32(__builtin_offsetof(tms57002_device, update_counter_count)); }
+	static u32 jit_off_cmem_force() { return u32(__builtin_offsetof(tms57002_device, m_debug_cmem_force)); }
+	static u32 jit_off_pf4_force() { return u32(__builtin_offsetof(tms57002_device, m_pf4_force_cmem_unsafe)); }
+	bool jit_pf4_cmem_deopt() const { return m_pf4_cmem_deopt; }
+	bool jit_cmem_pending() const { return update_counter_count != 0; }
+	static u32 jit_off_creg() { return u32(__builtin_offsetof(tms57002_device, creg)); }   // mac/mpy write creg = get_cmem(ca)
+	static u32 jit_off_xoa() { return u32(__builtin_offsetof(tms57002_device, xoa)); }   // rde/wre XRAM offset addr
+	static u32 jit_off_xwr() { return u32(__builtin_offsetof(tms57002_device, xwr)); }   // wre XRAM write data
+#pragma GCC diagnostic pop
+	void jit_xm_init() { xm_init(); }   // rde/wre arm the XRAM transaction (no macc)
+	bool jit_mpy_forward_on() const { return m_debug_mpy_smhd_forward; }   // debug: if on, mac/mpy deopt (compile-time gate)
+	bool jit_lmhd_forward_on() const { return m_debug_lmhd_srbd_forward; }  // debug: if on, lmhd deopt (compile-time gate)
+	unsigned jit_inst_param(int ipc) const { return cache.inst[ipc].param; }   // icd cmem/dmem address operand
+	u32 jit_get_cmem(u8 a) { return get_cmem(a); }   // deopt target for the lacc fast-path inline
+	// Emit-time probe: run ex_op with st1 = st1_in and return the resulting st1, non-destructively
+	// (full snapshot/restore). Flag-setter ops (`f` type: sfmo/sfai/sfao/sfma/rnd/scrm/...) are
+	// affine in st1 — st1' = (st1 & keep) | set — so the op-emitter discovers (keep,set) by probing
+	// the oracle at two st1 values instead of hard-coding the ST1_* field layout. icd may be any
+	// valid instruction descriptor (flag-setters ignore i->param).
+	u32 jit_probe_st1(unsigned op, const void *icd_ptr, u32 st1_in) {
+		debug_snapshot s = debug_capture_snapshot();
+		st1 = st1_in;
+		jit_op_exec(op, icd_ptr);
+		u32 out = st1;
+		debug_restore_snapshot(s);
+		return out;
+	}
+	const char *jit_op_mnemonic(unsigned op) const;   // op number -> mnemonic (compile-time op-inlining dispatch)
+	unsigned jit_op_variant(unsigned op) const;       // variant index within mnemonic group (0 = simplest form; JIT inlines only variant 0)
+	bool jit_serial_model() const { return serial_cycle_model_enabled(); }   // compile-time gate
+	void jit_xm_step() { if (sti & S_READ) xm_step_read(); else xm_step_write(); }  // called only when S_READ|S_WRITE set
+
+	// Distinct instruction-form mnemonics in the decode cache (i.e. used by the loaded
+	// program). Maps generated op indices back to forms via the generated name table —
+	// the JIT "implement these first" coverage list. Stable program -> call post-render.
+	std::vector<std::string> jit_used_mnemonics() const;
+	debug_snapshot debug_capture_snapshot() const;
+	void debug_restore_snapshot(const debug_snapshot &snapshot);
+	void debug_begin_sample_frame(const std::array<u32, 4> &frame);
+	void maybe_state_zap();
+	debug_macc_eval_result debug_eval_macc_output(u64 macc_value, int sfmo_mode, int rnd_mode, debug_macc_clip_mode clip_mode);
+	u64 sound_update_count() const { return m_sound_updates; }
+	u32 debug_serial_output_register(int index) const { return (index >= 0 && index < 4) ? so[index] : 0; }
+	u64 debug_macc() const { return macc; }
+	u64 debug_macc_read() const { return macc_read; }
+	u64 debug_macc_write() const { return macc_write; }
+	s32 debug_aacc() const { return aacc; }
+	u32 debug_creg() const { return creg; }
+	u32 debug_xoa() const { return xoa; }
+	u32 debug_xba() const { return xba; }
+	u32 debug_xrd() const { return xrd; }
+	u32 debug_txrd() const { return txrd; }
+	u32 debug_xwr() const { return xwr; }
+	u32 debug_xm_adr() const { return xm_adr; }
+	u8 debug_xm_cycles() const { return xm_cycles; }
+	u8 debug_xm_fetches() const { return xm_fetches; }
+	u32 cmem_value(u8 index) const { return cmem[index]; }
+	u32 dmem0_value(u8 index) const { return dmem0[index]; }
+	u32 dmem1_value(u8 index) const { return dmem1[index & 0x1f]; }
+	u8 debug_ba0() const { return ba0; }
+	u8 debug_ba1() const { return ba1; }
+	void debug_set_banks(u8 ba0_value, u8 ba1_value) { ba0 = ba0_value; ba1 = ba1_value; }
+	u32 status_bits() const { return sti; }
+	u8 host_addr() const { return sa; }
+	u8 host_index() const { return hidx; }
+	u8 update_pending_count() const { return update_counter_count; }
 
 	void pload_w(int state);
 	void cload_w(int state);
@@ -36,6 +456,7 @@ public:
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual void device_post_load() override ATTR_COLD;
 	virtual void sound_stream_update(sound_stream &stream) override;
 	virtual space_config_vector memory_space_config() const override;
 	virtual u32 execute_min_cycles() const noexcept override;
@@ -55,6 +476,40 @@ private:
 		S_BRANCH = 0x00000100,
 		S_HOST   = 0x00000200,
 		S_UPDATE = 0x00000400,
+	};
+
+	enum class update_timing_mode : u8
+	{
+		normal = 0,
+		eager,
+		sample_delay_1,
+		read_delay_1
+	};
+
+	enum class serial_input_timing_mode : u8
+	{
+		same_sample = 0,
+		sample_delay_1
+	};
+
+	enum class serial_frame_mode : u8
+	{
+		snapshot = 0,
+		lrck_subframe
+	};
+
+	enum class serial_input_immediate_side_mode : u8
+	{
+		auto_select = 0,
+		left,
+		right
+	};
+
+	enum class pending_pre_transfer_type : u8
+	{
+		none = 0,
+		dis_dmem0,
+		dis_dmem1
 	};
 
 	enum {
@@ -132,18 +587,96 @@ private:
 	u32 dmem1[32];
 
 	u32 si[4], so[4];
+	std::array<u32, 4> m_serial_input_latch;
+	std::array<u32, 4> m_serial_input_active;
+	std::array<u32, 4> m_serial_input_frame;
+	std::array<u32, 4> m_serial_input_prev_frame;
+	std::array<u32, 4> m_serial_input_pending;
+	std::array<u32, 4> m_serial_output_frame;
+	std::array<u32, 4> m_serial_output_build;
+	serial_output_observer m_serial_output_observer;
+	u8 m_serial_input_valid;
+	u8 m_serial_input_active_valid;
+	u8 m_serial_input_prev_valid;
+	u8 m_serial_input_pending_valid;
+	u8 m_serial_output_pending_valid;
+	// (m_pending_pre_transfer itself lives next to rptc/rptc_next — see the exec-state block below.)
+	u32 m_pending_pre_transfer_addr;
+	u32 m_pending_pre_transfer_value;
+	u8 m_pending_pre_transfer_pc;
+	serial_input_timing_mode m_serial_input_timing_mode;
+		serial_frame_mode m_serial_frame_mode;
+		serial_input_immediate_side_mode m_serial_input_immediate_side_mode;
+		int m_serial_frame_clocks;
+		int m_serial_exec_halfcycles;
+	int m_serial_input_pending_halfcycle;
+	int m_serial_output_pending_halfcycle;
+	// Left-subframe (SO0/SO2) DOS writes remain eligible later than the
+	// right-subframe lanes on silicon.
+	int m_serial_output_pending_halfcycle_left;
+	int m_serial_input_pending_halfcycle_override;
+	int m_serial_output_pending_halfcycle_override;
+	int m_serial_output_pending_halfcycle_left_override;
+		bool m_serial_output_write_handoff;
+		bool m_sync_polarity_rising;
+		bool m_serial_output_muted;
+	bool m_serial_frame_flip_input;
+	bool m_serial_frame_flip_output;
+	bool m_stream_output_raw;
+	bool m_stream_sync_enabled;
+	bool m_smhc_post_slot;
+	bool m_ca_inc_delayed;
+	bool m_pf4_force_cmem_unsafe = false;
+	bool m_pf4_cmem_deopt = false;
+	bool m_abs_saturate;
+	u64 m_sound_updates;
+	bool m_disable_decode_chaining = false;
+	u32 m_program_version = 0;   // M4: bumps on every program (re)load so the JIT detects PLOAD reloads
+	bool m_input_sine = false;
+	double m_input_sine_amp = 0.0;
+	double m_input_sine_freq = 0.0;
+		int m_dready_line;
+		int m_pc0_line;
+		int m_empty_line;
+	update_timing_mode m_update_timing_mode;
+	std::array<u8, 256> m_update_timing_addr{};
+	bool m_update_timing_addr_any;
+	std::array<u64, 16> m_update_enqueue_su{};
+	std::array<u8, 16> m_update_read_delay_seen{};
+	bool m_update_active;
+	u8 m_update_address_run;
+	u8 m_update_address_run_for_entry[16];
+	bool m_debug_cmem_force;
+			int m_debug_ca_mpy_extra_shift;
+			int m_debug_dc_mpy_extra_shift;
+			int m_debug_smhc_trunc_bits;
+			bool m_debug_lmhd_srbd_forward;
+			bool m_debug_mpy_smhd_forward;
+				int m_debug_mpy_smhd_forward_pc;
+				bool m_debug_smhd_raw_path;
+				bool m_debug_smld_raw_path;
 
 	u32 st0, st1, sti;
 	u32 aacc, xoa, xba, xwr, xrd, txrd, creg;
 
-	u8 pc, hpc, ca, id, ba0, ba1, rptc, rptc_next, sa;
+	u8 pc, hpc, ca, id, ba0, ba1, rptc, rptc_next;
+	// Declared HERE (not with the serial members) so the JIT's per-instruction slow-post trigger test
+	// (pending pre-transfer | rptc | rptc_next) is ONE dword load over three adjacent u8s. The driver
+	// verifies adjacency at emit time and falls back to three byte loads if this ever moves.
+	pending_pre_transfer_type m_pending_pre_transfer;
+	u8 sa;
 
 	u32 xm_adr;
+	u8 xm_cycles;
+	u8 xm_fetches;
 
 	u8 host[4], hidx, allow_update;
 
 	u32 update[16];
-	u8 update_counter_head, update_counter_tail;
+	u8 update_sa[16];
+	// The modulo-16 indices alone cannot distinguish an empty queue from all 16
+	// hardware update registers being occupied.
+	u8 update_counter_head, update_counter_tail, update_counter_count;
 
 	cd cache;
 
@@ -162,6 +695,19 @@ private:
 	void decode_cat2_pre(u32 opcode, u16 *op, cstate *cs);
 	void decode_cat3(u32 opcode, u16 *op, cstate *cs);
 	void decode_cat2_post(u32 opcode, u16 *op, cstate *cs);
+	void prepare_serial_inputs(const std::array<u32, 4> &frame);
+	void start_serial_frame(const std::array<u32, 4> &frame);
+	void finalize_serial_output_build();
+	void advance_serial_phase(int halfcycles);
+	bool serial_cycle_model_enabled() const;
+	void schedule_pre_dis_write(bool dmem1_bank, u32 addr, u32 value);
+	void apply_pending_pre_transfer();
+	void write_dmem(bool dmem1_bank, u32 addr, u32 value, const char *source, u8 pc_value);
+	void write_cmem_from_dsp(u8 addr, u32 value);
+	void write_cmem_direct(u8 addr, u32 value, const char *source, int queue_pos = -1);
+	u32 serial_input_read(int index);
+	void serial_output_write(int index, u32 value);
+	u32 serial_output_pin(int index) const;
 
 	inline int xmode(u32 opcode, char type, cstate *cs);
 	inline int sfao(u32 st1);
@@ -176,27 +722,41 @@ private:
 	void update_dready();
 	void update_pc0();
 	void update_empty();
+	bool host_update_register_busy() const;
+	bool update_timing_selected(u8 addr) const;
+	u32 current_cmem_view(u8 addr) const;
 
 	void xm_init();
+	int xm_required_fetches() const;
+	int xm_required_cycles() const;
 	void xm_step_read();
 	void xm_step_write();
 	s64 macc_to_output_0(s64 rounding, u64 rmask);
 	s64 macc_to_output_1(s64 rounding, u64 rmask);
 	s64 macc_to_output_2(s64 rounding, u64 rmask);
 	s64 macc_to_output_3(s64 rounding, u64 rmask);
-	s64 macc_to_output_0s(s64 rounding, u64 rmask);
-	s64 macc_to_output_1s(s64 rounding, u64 rmask);
-	s64 macc_to_output_2s(s64 rounding, u64 rmask);
-	s64 macc_to_output_3s(s64 rounding, u64 rmask);
+	s64 macc_to_output_0s(s64 rounding, u64 rmask, int rnd_mode);
+	s64 macc_to_output_1s(s64 rounding, u64 rmask, int rnd_mode);
+	s64 macc_to_output_2s(s64 rounding, u64 rmask, int rnd_mode);
+	s64 macc_to_output_3s(s64 rounding, u64 rmask, int rnd_mode);
+	s64 macc_to_output_0n(s64 rounding, u64 rmask);
+	s64 macc_to_output_1n(s64 rounding, u64 rmask);
+	s64 macc_to_output_2n(s64 rounding, u64 rmask);
+	s64 macc_to_output_3n(s64 rounding, u64 rmask);
 	s64 check_macc_overflow_0();
 	s64 check_macc_overflow_1();
 	s64 check_macc_overflow_2();
 	s64 check_macc_overflow_3();
 	s64 check_macc_overflow_0s();
 	s64 check_macc_overflow_1s();
-	s64 check_macc_overflow_2s();
-	s64 check_macc_overflow_3s();
-	void cache_flush();
+		s64 check_macc_overflow_2s();
+			s64 check_macc_overflow_3s();
+			s64 ca_mpy_product_to_macc(s64 product, int base_shift) const;
+			s64 dc_mpy_product_to_macc(s64 product) const;
+			s64 smhc_store_shift(s64 macc_out) const;
+			u32 lmhd_d_operand(u32 current, u8 param) const;
+			u32 mpy_d_operand(u32 current, u8 param);
+			void cache_flush();
 	void add_one(cstate *cs, u16 op, u8 param);
 	void decode_one(u32 opcode, cstate *cs, void (tms57002_device::*dec)(u32 opcode, u16 *op, cstate *cs));
 	s16 get_hash(u8 adr, u32 st1, s16 *pnode);
@@ -1856,7 +2416,221 @@ private:
 	void ex_1653(const icd *i);
 	void ex_1654(const icd *i);
 	void ex_1655(const icd *i);
-};
+	void ex_1656(const icd *i);
+	void ex_1657(const icd *i);
+	void ex_1658(const icd *i);
+	void ex_1659(const icd *i);
+	void ex_1660(const icd *i);
+	void ex_1661(const icd *i);
+	void ex_1662(const icd *i);
+	void ex_1663(const icd *i);
+	void ex_1664(const icd *i);
+	void ex_1665(const icd *i);
+	void ex_1666(const icd *i);
+	void ex_1667(const icd *i);
+	void ex_1668(const icd *i);
+	void ex_1669(const icd *i);
+	void ex_1670(const icd *i);
+	void ex_1671(const icd *i);
+	void ex_1672(const icd *i);
+	void ex_1673(const icd *i);
+	void ex_1674(const icd *i);
+	void ex_1675(const icd *i);
+	void ex_1676(const icd *i);
+	void ex_1677(const icd *i);
+	void ex_1678(const icd *i);
+	void ex_1679(const icd *i);
+	void ex_1680(const icd *i);
+	void ex_1681(const icd *i);
+	void ex_1682(const icd *i);
+	void ex_1683(const icd *i);
+	void ex_1684(const icd *i);
+	void ex_1685(const icd *i);
+	void ex_1686(const icd *i);
+	void ex_1687(const icd *i);
+	void ex_1688(const icd *i);
+	void ex_1689(const icd *i);
+	void ex_1690(const icd *i);
+	void ex_1691(const icd *i);
+	void ex_1692(const icd *i);
+	void ex_1693(const icd *i);
+	void ex_1694(const icd *i);
+	void ex_1695(const icd *i);
+	void ex_1696(const icd *i);
+	void ex_1697(const icd *i);
+	void ex_1698(const icd *i);
+	void ex_1699(const icd *i);
+	void ex_1700(const icd *i);
+	void ex_1701(const icd *i);
+	void ex_1702(const icd *i);
+	void ex_1703(const icd *i);
+	void ex_1704(const icd *i);
+	void ex_1705(const icd *i);
+	void ex_1706(const icd *i);
+	void ex_1707(const icd *i);
+	void ex_1708(const icd *i);
+	void ex_1709(const icd *i);
+	void ex_1710(const icd *i);
+	void ex_1711(const icd *i);
+	void ex_1712(const icd *i);
+	void ex_1713(const icd *i);
+	void ex_1714(const icd *i);
+	void ex_1715(const icd *i);
+	void ex_1716(const icd *i);
+	void ex_1717(const icd *i);
+	void ex_1718(const icd *i);
+	void ex_1719(const icd *i);
+	void ex_1720(const icd *i);
+	void ex_1721(const icd *i);
+	void ex_1722(const icd *i);
+	void ex_1723(const icd *i);
+	void ex_1724(const icd *i);
+	void ex_1725(const icd *i);
+	void ex_1726(const icd *i);
+	void ex_1727(const icd *i);
+	void ex_1728(const icd *i);
+	void ex_1729(const icd *i);
+	void ex_1730(const icd *i);
+	void ex_1731(const icd *i);
+	void ex_1732(const icd *i);
+	void ex_1733(const icd *i);
+	void ex_1734(const icd *i);
+	void ex_1735(const icd *i);
+	void ex_1736(const icd *i);
+	void ex_1737(const icd *i);
+	void ex_1738(const icd *i);
+	void ex_1739(const icd *i);
+	void ex_1740(const icd *i);
+	void ex_1741(const icd *i);
+	void ex_1742(const icd *i);
+	void ex_1743(const icd *i);
+	void ex_1744(const icd *i);
+	void ex_1745(const icd *i);
+	void ex_1746(const icd *i);
+	void ex_1747(const icd *i);
+	void ex_1748(const icd *i);
+	void ex_1749(const icd *i);
+	void ex_1750(const icd *i);
+	void ex_1751(const icd *i);
+	void ex_1752(const icd *i);
+	void ex_1753(const icd *i);
+	void ex_1754(const icd *i);
+	void ex_1755(const icd *i);
+	void ex_1756(const icd *i);
+	void ex_1757(const icd *i);
+	void ex_1758(const icd *i);
+	void ex_1759(const icd *i);
+	void ex_1760(const icd *i);
+	void ex_1761(const icd *i);
+	void ex_1762(const icd *i);
+	void ex_1763(const icd *i);
+	void ex_1764(const icd *i);
+	void ex_1765(const icd *i);
+	void ex_1766(const icd *i);
+	void ex_1767(const icd *i);
+	void ex_1768(const icd *i);
+	void ex_1769(const icd *i);
+	void ex_1770(const icd *i);
+	void ex_1771(const icd *i);
+	void ex_1772(const icd *i);
+	void ex_1773(const icd *i);
+	void ex_1774(const icd *i);
+	void ex_1775(const icd *i);
+	void ex_1776(const icd *i);
+	void ex_1777(const icd *i);
+	void ex_1778(const icd *i);
+	void ex_1779(const icd *i);
+	void ex_1780(const icd *i);
+	void ex_1781(const icd *i);
+	void ex_1782(const icd *i);
+	void ex_1783(const icd *i);
+	void ex_1784(const icd *i);
+	void ex_1785(const icd *i);
+	void ex_1786(const icd *i);
+	void ex_1787(const icd *i);
+	void ex_1788(const icd *i);
+	void ex_1789(const icd *i);
+	void ex_1790(const icd *i);
+	void ex_1791(const icd *i);
+	void ex_1792(const icd *i);
+	void ex_1793(const icd *i);
+	void ex_1794(const icd *i);
+	void ex_1795(const icd *i);
+	void ex_1796(const icd *i);
+	void ex_1797(const icd *i);
+	void ex_1798(const icd *i);
+	void ex_1799(const icd *i);
+	void ex_1800(const icd *i);
+	void ex_1801(const icd *i);
+	void ex_1802(const icd *i);
+	void ex_1803(const icd *i);
+	void ex_1804(const icd *i);
+	void ex_1805(const icd *i);
+	void ex_1806(const icd *i);
+	void ex_1807(const icd *i);
+	void ex_1808(const icd *i);
+	void ex_1809(const icd *i);
+	void ex_1810(const icd *i);
+	void ex_1811(const icd *i);
+	void ex_1812(const icd *i);
+	void ex_1813(const icd *i);
+	void ex_1814(const icd *i);
+	void ex_1815(const icd *i);
+	void ex_1816(const icd *i);
+	void ex_1817(const icd *i);
+	void ex_1818(const icd *i);
+	void ex_1819(const icd *i);
+	void ex_1820(const icd *i);
+	void ex_1821(const icd *i);
+	void ex_1822(const icd *i);
+	void ex_1823(const icd *i);
+	void ex_1824(const icd *i);
+	void ex_1825(const icd *i);
+	void ex_1826(const icd *i);
+	void ex_1827(const icd *i);
+	void ex_1828(const icd *i);
+	void ex_1829(const icd *i);
+	void ex_1830(const icd *i);
+	void ex_1831(const icd *i);
+	void ex_1832(const icd *i);
+	void ex_1833(const icd *i);
+	void ex_1834(const icd *i);
+	void ex_1835(const icd *i);
+	void ex_1836(const icd *i);
+	void ex_1837(const icd *i);
+	void ex_1838(const icd *i);
+	void ex_1839(const icd *i);
+	void ex_1840(const icd *i);
+	void ex_1841(const icd *i);
+	void ex_1842(const icd *i);
+	void ex_1843(const icd *i);
+	void ex_1844(const icd *i);
+	void ex_1845(const icd *i);
+	void ex_1846(const icd *i);
+	void ex_1847(const icd *i);
+	void ex_1848(const icd *i);
+	void ex_1849(const icd *i);
+	void ex_1850(const icd *i);
+	void ex_1851(const icd *i);
+	void ex_1852(const icd *i);
+	void ex_1853(const icd *i);
+	void ex_1854(const icd *i);
+	void ex_1855(const icd *i);
+	void ex_1856(const icd *i);
+	void ex_1857(const icd *i);
+	void ex_1858(const icd *i);
+	void ex_1859(const icd *i);
+	void ex_1860(const icd *i);
+	void ex_1861(const icd *i);
+	void ex_1862(const icd *i);
+	void ex_1863(const icd *i);
+	void ex_1864(const icd *i);
+
+	// --- pooled dynarec ownership (added at the END of the class: prior member offsets — which the
+	// JIT TU bakes via the jit_off_* accessors — stay untouched across emu.h layout variants) ---
+	bool m_dynarec_default = false;             // machine-config default (set_dynarec_default; env overrides)
+	std::unique_ptr<tms57002::Jit> m_jit;       // per-device Jit, created lazily at the execute_run hook
+	};
 
 enum {
 	TMS57002_PC=1,
