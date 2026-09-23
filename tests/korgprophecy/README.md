@@ -28,8 +28,10 @@ research branch without importing the research branch's diagnostic machinery.
   available through the explicit `legacy` mode but contribute zero tests to
   the public release denominator.
 
-The public `TMS57TEST_ONLY=all` harness contains 23 self-contained tests and
-requires 23 pass, zero fail, zero error, and zero blocked.  Missing private
+The public `TMS57TEST_ONLY=all` harness contains 24 self-contained tests and
+requires 24 pass, zero fail, zero error, and zero blocked. The power-on storage
+test constructs a DSP over poisoned memory and checks that reset retains RAM.
+Missing private
 assets cannot make the public gate green or red because legacy research tests
 are no longer mixed into it.
 

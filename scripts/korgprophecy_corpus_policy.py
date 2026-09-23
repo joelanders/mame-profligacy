@@ -122,7 +122,7 @@ def main() -> int:
 
     print(
         "KORGPROPHECY_CORPUS_POLICY status=PASS promoted=554 "
-        "legacy_superseded=42 recapture_optional=4 focused=23 retired=12 "
+        "legacy_superseded=42 recapture_optional=4 focused=24 retired=12 "
         "release_blockers=0"
     )
     return 0
