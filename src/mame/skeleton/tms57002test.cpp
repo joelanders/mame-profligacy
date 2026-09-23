@@ -67,6 +67,7 @@ private:
 	void check_equal(const char *name, s64 actual, s64 expected);
 	void check_true(const char *name, bool actual);
 	void check_false(const char *name, bool actual);
+	void test_power_on_storage();
 	void test_macc_output_clipping();
 	void test_domh_movm_rounding_oracle_boundaries();
 	void test_macc_output_unrounded_exceptions();
@@ -7819,10 +7820,46 @@ void tms57002test_state::probe_dsp3_a12_drone_regrowth()
 	}
 }
 
+void tms57002test_state::test_power_on_storage()
+{
+	// Construct the real device over nonzero allocator contents, without relying
+	// on fresh OS pages being zero. Inspect only storage valid before start/reset.
+	struct storage { alignas(tms57002_device) unsigned char bytes[sizeof(tms57002_device)]; };
+	auto allocation = std::make_unique<storage>();
+	std::memset(allocation->bytes, 0xa5, sizeof(allocation->bytes));
+	auto destroy = [](tms57002_device *dsp) { dsp->~tms57002_device(); };
+	std::unique_ptr<tms57002_device, decltype(destroy)> probe(
+		new (allocation->bytes) tms57002_device(machine().config(), "power_on_probe", this, 0), destroy);
+	bool ram_zero = true;
+	for (unsigned i = 0; i < 256; ++i)
+		ram_zero = ram_zero && probe->cmem_value(i) == 0 && probe->dmem0_value(i) == 0;
+	for (unsigned i = 0; i < 32; ++i) ram_zero = ram_zero && probe->dmem1_value(i) == 0;
+	check_true("power-on RAM ignores allocator contents", ram_zero);
+	check_equal("power-on AACC", probe->debug_aacc(), 0);
+	check_equal("power-on CREG", probe->debug_creg(), 0);
+	check_equal("power-on XWR", probe->debug_xwr(), 0);
+	check_equal("power-on XRD", probe->debug_xrd(), 0);
+
+	// Construction-time initialization must not turn a chip reset into a RAM
+	// clear. Firmware and save-state users retain the existing reset contract.
+	tms57002_device::debug_snapshot seeded{};
+	seeded.cmem.fill(0x12345678);
+	seeded.dmem0.fill(0x00abcdef);
+	seeded.dmem1.fill(0x00654321);
+	m_dsp->debug_restore_snapshot(seeded);
+	m_dsp->reset();
+	const auto after = m_dsp->debug_capture_snapshot();
+	check_true("reset retains CMEM", after.cmem == seeded.cmem);
+	check_true("reset retains DMEM0", after.dmem0 == seeded.dmem0);
+	check_true("reset retains DMEM1", after.dmem1 == seeded.dmem1);
+	m_dsp->debug_restore_snapshot(tms57002_device::debug_snapshot{});
+}
+
 void tms57002test_state::run_all_focused_tests()
 {
 	struct entry { const char *name; void (tms57002test_state::*fn)(); };
 	static const entry tests[] = {
+		{ "power_on_storage", &tms57002test_state::test_power_on_storage },
 		{ "aovm_neg_abs_int32_min", &tms57002test_state::test_aovm_neg_abs_int32_min },
 		{ "cmem_update_multiword_sequence", &tms57002test_state::test_cmem_update_multiword_sequence },
 		{ "cmem_update_new_address_breaks_active_run", &tms57002test_state::test_cmem_update_new_address_breaks_active_run },
@@ -7945,6 +7982,8 @@ void tms57002test_state::run_tests_now()
 			machine().schedule_exit();
 			return;
 		}
+		else if (!std::strcmp(only, "power_on_storage"))
+			test_power_on_storage();
 		else if (!std::strcmp(only, "fixcoeff"))
 			probe_dsp3_a02_fix_su95299_coeff_sensitivity();
 		else if (!std::strcmp(only, "fixb3src"))

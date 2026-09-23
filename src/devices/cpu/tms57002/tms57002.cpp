@@ -91,6 +91,17 @@ tms57002_device::tms57002_device(const machine_config &mconfig, const char *tag,
 	, program_config("program", ENDIANNESS_LITTLE, 32, 8, -2, address_map_constructor(FUNC(tms57002_device::internal_pgm), this))
 	, data_config("data", ENDIANNESS_LITTLE, 8, 20)
 {
+	// Power-on storage must not inherit allocator contents. Firmware initializes
+	// the words it uses, but diagnostic/save snapshots also include unused RAM
+	// and inactive host/update registers. Reset deliberately retains these RAM
+	// contents; initialize only when constructing the chip.
+	std::fill(std::begin(cmem), std::end(cmem), 0U);
+	std::fill(std::begin(dmem0), std::end(dmem0), 0U);
+	std::fill(std::begin(dmem1), std::end(dmem1), 0U);
+	std::fill(std::begin(update), std::end(update), 0U);
+	std::fill(std::begin(host), std::end(host), 0U);
+	aacc = xwr = xrd = creg = 0;
+	hpc = allow_update = 0;
 }
 
 std::unique_ptr<util::disasm_interface> tms57002_device::create_disassembler()

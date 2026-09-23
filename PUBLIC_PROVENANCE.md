@@ -79,7 +79,7 @@ tracked corpus therefore contains 554 exact replay cases.  A historical ledger
 preserves mismatch records and hashes for 42 underdeclared captures superseded
 by later explicit-seed replays and four optional fully declared recaptures.
 Those 46 rows are not current emulator failures and contribute zero release
-blockers.  The current public focused gate is independently 23/23 with no
+blockers. The power-on storage regression brings the public focused gate to 24/24 with no
 blocked tests.
 
 These results establish parity for the covered observations, not exhaustive
