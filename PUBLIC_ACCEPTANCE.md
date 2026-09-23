@@ -18,7 +18,7 @@ older macOS targets are not certified for v1.
 | --- | --- |
 | Publication history/path/content audit | all delta paths allowlisted; zero forbidden paths, assets, or private markers |
 | `KPROP_*` disposition audit | every token classified; zero diagnostic and zero stale/compatibility controls |
-| Public focused suite | 23 pass, 0 fail, 0 error, 0 blocked |
+| Public focused suite | 24 pass, 0 fail, 0 error, 0 blocked |
 | Compact silicon-derived corpus | 10/10 cases, 65/65 assertions |
 | Portable hardware-oracle corpus | 554/554 exact cases |
 | Corpus classification policy | 42 historical rows `legacy_superseded`, four `recapture_optional`, all linked to stronger exact replays, zero release blockers; 12 retired research tests contribute zero cases |
