@@ -26,13 +26,22 @@ ALLOWED_EXACT = {
     "PUBLIC_ACCEPTANCE.md",
     "PUBLIC_PROVENANCE.md",
     "scripts/src/cpu.lua",
+    "scripts/src/emu.lua",
     "scripts/src/main.lua",
     "scripts/tms57002test_build.sh",
     # Reviewed, source-compiled HD44780 A00 datasheet reconstruction used by
     # korgprophecy.cpp so the public build does not require a redistributed ROM.
     "src/devices/video/hd44780.cpp",
     "src/devices/video/hd44780.h",
+    # Optional controller/DSP execution cluster for the three registered Prophecy
+    # DSPs; inactive unless the host enables it, and never changes output.
+    "src/emu/disound.cpp",
+    "src/emu/dspcluster.h",
+    "src/emu/schedule.cpp",
+    "src/emu/schedule.h",
+    "src/emu/sound.h",
     # Host-selected mixer delivery period; the default preserves MAME's cadence.
+    # Also hands the sound graph to the DSP cluster when it is active.
     "src/emu/sound.cpp",
     "src/osd/osdepend.h",
     "src/mame/korg/korgprophecy.cpp",
