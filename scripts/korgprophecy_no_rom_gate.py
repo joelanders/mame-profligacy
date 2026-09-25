@@ -15,7 +15,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 FOCUSED = re.compile(
-    r"TMS57TEST_ALL_SUMMARY tests=23 passed=23 failed=0 "
+    r"TMS57TEST_ALL_SUMMARY tests=24 passed=24 failed=0 "
     r"errored=0 blocked=0 failed_checks=0"
 )
 COMPACT = re.compile(

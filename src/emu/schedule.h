@@ -99,6 +99,7 @@ class device_scheduler
 {
 	friend class device_execute_interface;
 	friend class emu_timer;
+	friend void configure_dsp_cluster(device_scheduler &, std::array<device_execute_interface *, 3>);
 
 public:
 	// construction/destruction
@@ -109,7 +110,7 @@ public:
 	running_machine &machine() const noexcept { return m_machine; }
 	attotime time() const noexcept;
 	emu_timer *first_timer() const noexcept { return m_timer_list; }
-	device_execute_interface *currently_executing() const noexcept { return m_executing_device; }
+	device_execute_interface *currently_executing() const noexcept;
 	bool can_save() const;
 
 	// execution
@@ -142,6 +143,8 @@ private:
 	void compute_perfect_interleave();
 	void rebuild_execute_list();
 	void apply_suspend_changes();
+	void update_dsp_cluster(bool blocked);
+	bool advance_dsp_cluster(device_execute_interface *exec, attotime &target);
 
 	// timer helpers
 	template <bool CheckIndex = false> emu_timer &timer_list_insert(emu_timer &timer);
@@ -181,6 +184,7 @@ private:
 	simple_list<quantum_slot>   m_quantum_list;             // list of active quanta
 	fixed_allocator<quantum_slot> m_quantum_allocator;      // allocator for quanta
 	attoseconds_t               m_quantum_minimum;          // duration of minimum quantum
+	std::array<device_execute_interface *, 3> m_cluster_devices{}; // registered DSP cluster, host only
 };
 
 

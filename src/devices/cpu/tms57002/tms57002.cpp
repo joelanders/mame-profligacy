@@ -9,6 +9,7 @@
 ***************************************************************************/
 
 #include "emu.h"
+#include "dspcluster.h"
 #include "tms57002.h"
 #include "57002dsm.h"
 #include "tms57002_jit.h"   // DSP dynarec (KPROP_DSP_PERFRAME=4 live seam)
@@ -91,6 +92,17 @@ tms57002_device::tms57002_device(const machine_config &mconfig, const char *tag,
 	, program_config("program", ENDIANNESS_LITTLE, 32, 8, -2, address_map_constructor(FUNC(tms57002_device::internal_pgm), this))
 	, data_config("data", ENDIANNESS_LITTLE, 8, 20)
 {
+	// Power-on storage must not inherit allocator contents. Firmware initializes
+	// the words it uses, but diagnostic/save snapshots also include unused RAM
+	// and inactive host/update registers. Reset deliberately retains these RAM
+	// contents; initialize only when constructing the chip.
+	std::fill(std::begin(cmem), std::end(cmem), 0U);
+	std::fill(std::begin(dmem0), std::end(dmem0), 0U);
+	std::fill(std::begin(dmem1), std::end(dmem1), 0U);
+	std::fill(std::begin(update), std::end(update), 0U);
+	std::fill(std::begin(host), std::end(host), 0U);
+	aacc = xwr = xrd = creg = 0;
+	hpc = allow_update = 0;
 }
 
 std::unique_ptr<util::disasm_interface> tms57002_device::create_disassembler()
@@ -100,6 +112,9 @@ std::unique_ptr<util::disasm_interface> tms57002_device::create_disassembler()
 
 void tms57002_device::pload_w(int state)
 {
+	if (cluster_post(machine().scheduler(), this,
+			[](void *p, u64 value, u64) { static_cast<tms57002_device *>(p)->pload_w(value); }, state))
+		return;
 	u8 olds = sti;
 	if (state)
 		sti &= ~IN_PLOAD;
@@ -124,6 +139,9 @@ void tms57002_device::pload_w(int state)
 
 void tms57002_device::cload_w(int state)
 {
+	if (cluster_post(machine().scheduler(), this,
+			[](void *p, u64 value, u64) { static_cast<tms57002_device *>(p)->cload_w(value); }, state))
+		return;
 	u8 olds = sti;
 	if (state)
 		sti &= ~IN_CLOAD;
@@ -160,6 +178,12 @@ void tms57002_device::device_post_load()
 
 void tms57002_device::device_reset()
 {
+	if (cluster_post(machine().scheduler(), this,
+			[](void *p, u64, u64) { static_cast<tms57002_device *>(p)->device_reset(); }))
+	{
+		cluster_fence();
+		return;
+	}
 	sti = (sti & ~(SU_MASK|S_READ|S_WRITE|S_BRANCH|S_HOST|S_UPDATE)) | (SU_ST0|S_IDLE);
 	pc = 0;
 	ca = 0;
@@ -223,6 +247,9 @@ void tms57002_device::device_reset()
 
 void tms57002_device::data_w(u8 data)
 {
+	if (cluster_post(machine().scheduler(), this,
+			[](void *p, u64 value, u64) { static_cast<tms57002_device *>(p)->data_w(value); }, data))
+		return;
 	switch (sti & (IN_PLOAD|IN_CLOAD))
 	{
 	case 0:
@@ -321,6 +348,14 @@ void tms57002_device::data_w(u8 data)
 
 u8 tms57002_device::data_r()
 {
+	u8 answer = 0;
+	if (cluster_post(machine().scheduler(), this, [](void *p, u64 address, u64) {
+			*reinterpret_cast<u8 *>(address) = static_cast<tms57002_device *>(p)->data_r();
+		}, reinterpret_cast<u64>(&answer)))
+	{
+		cluster_fence();
+		return answer;
+	}
 	u8 res;
 	if (!(sti & S_HOST))
 		return 0xff;
@@ -1760,6 +1795,7 @@ std::array<u32, 4> tms57002_device::jit_run_sample_frame(const std::array<u32, 4
 
 tms57002_device::debug_snapshot tms57002_device::debug_capture_snapshot() const
 {
+	cluster_fence();
 	debug_snapshot snapshot;
 	snapshot.sound_updates = m_sound_updates;
 	snapshot.pc = pc;
@@ -2335,6 +2371,8 @@ inst:
 
 void tms57002_device::sound_stream_update(sound_stream &stream)
 {
+	if (cluster_consumer() && stream.samples() != 1)
+		throw emu_fatalerror("DSP cluster audio update must preserve single-frame advancement");
 	assert(stream.samples() == 1);
 	maybe_state_zap();
 	m_sound_updates++;
