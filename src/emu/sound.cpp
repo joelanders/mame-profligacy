@@ -9,6 +9,7 @@
 ***************************************************************************/
 
 #include "emu.h"
+#include "dspcluster.h"
 #include "sound.h"
 
 #include "audio_effects/aeffect.h"
@@ -1886,6 +1887,8 @@ void sound_manager::mapping_update()
 
 	if(m_osd_info.m_generation == 0xffff0000)
 		return;
+	// Mapping changes are rare and must see a quiescent graph.
+	cluster_fence();
 	if(m_osd_info.m_generation == 0xffff0001)
 		startup_cleanups();
 
@@ -2006,6 +2009,16 @@ void sound_manager::update(s32)
 
 void sound_manager::streams_update()
 {
+	// The DSP cluster worker owns the sound graph and computes it through this
+	// same function; the scheduler then publishes the output after draining it.
+	if (cluster_post(machine().scheduler(), this,
+			[](void *p, u64, u64) { static_cast<sound_manager *>(p)->streams_update(); }))
+	{
+		cluster_fence();
+		record_output();
+		return;
+	}
+
 	attotime now = machine().time();
 	{
 #ifndef SOUND_DISABLE_THREADING
@@ -2057,6 +2070,12 @@ void sound_manager::streams_update()
 	for(osd_input_stream &stream : m_osd_input_streams)
 		stream.m_buffer.sync();
 
+	if(!cluster_consumer())
+		record_output();
+}
+
+void sound_manager::record_output()
+{
 	machine().osd().add_audio_to_recording(m_record_buffer.data(), m_record_samples);
 	machine().video().add_sound_to_recording(m_record_buffer.data(), m_record_samples);
 	if(m_wavfile)
