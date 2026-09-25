@@ -42,6 +42,7 @@
 #include "emupal.h"
 #include "screen.h"
 #include "speaker.h"
+#include "dspcluster.h"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -64,6 +65,101 @@
 
 namespace
 {
+// Deterministic diagnostics use named values, never struct padding or native
+// pointers. Captures drain any DSP cluster work first; never used in timing runs.
+template <typename T> void hash_dsp_state(u64 &hash, const T &value)
+{
+	if constexpr (std::is_integral_v<T>)
+	{
+		const u64 bits = u64(value);
+		for (unsigned i = 0; i < 8; ++i) { hash ^= u8(bits >> (i * 8)); hash *= 1099511628211ULL; }
+	}
+	else
+		for (const auto &item : value) hash_dsp_state(hash, item);
+}
+
+u64 dsp_state_digest(const tms57002_device::debug_snapshot &state, unsigned detail_chip = 0)
+{
+	u64 hash = 14695981039346656037ULL;
+	auto add = [&](const char *name, const auto &value) {
+		hash_dsp_state(hash, value);
+		if (detail_chip)
+		{
+			u64 part = 14695981039346656037ULL;
+			hash_dsp_state(part, value);
+			std::fprintf(stderr, "[dsp-field] chip=%u field=%s hash=%016llx\n", detail_chip, name, (unsigned long long)part);
+		}
+	};
+	add("sound_updates", state.sound_updates);
+	add("pc", state.pc);
+	add("hpc", state.hpc);
+	add("ca", state.ca);
+	add("id", state.id);
+	add("ba0", state.ba0);
+	add("ba1", state.ba1);
+	add("rptc", state.rptc);
+	add("rptc_next", state.rptc_next);
+	add("sa", state.sa);
+	add("hidx", state.hidx);
+	add("host", state.host);
+	add("allow_update", state.allow_update);
+	add("st0", state.st0);
+	add("st1", state.st1);
+	add("sti", state.sti);
+	add("aacc", state.aacc);
+	add("macc", state.macc);
+	add("macc_read", state.macc_read);
+	add("macc_write", state.macc_write);
+	add("creg", state.creg);
+	add("xoa", state.xoa);
+	add("xba", state.xba);
+	add("xwr", state.xwr);
+	add("xrd", state.xrd);
+	add("txrd", state.txrd);
+	add("xm_adr", state.xm_adr);
+	add("xm_cycles", state.xm_cycles);
+	add("xm_fetches", state.xm_fetches);
+	add("si", state.si);
+	add("so", state.so);
+	add("serial_input_latch", state.serial_input_latch);
+	add("serial_input_active", state.serial_input_active);
+	add("serial_input_frame", state.serial_input_frame);
+	add("serial_input_prev_frame", state.serial_input_prev_frame);
+	add("serial_input_pending", state.serial_input_pending);
+	add("serial_input_valid", state.serial_input_valid);
+	add("serial_input_active_valid", state.serial_input_active_valid);
+	add("serial_input_prev_valid", state.serial_input_prev_valid);
+	add("serial_input_pending_valid", state.serial_input_pending_valid);
+	add("serial_output_pending_valid", state.serial_output_pending_valid);
+	add("pending_pre_transfer", state.pending_pre_transfer);
+	add("pending_pre_transfer_addr", state.pending_pre_transfer_addr);
+	add("pending_pre_transfer_value", state.pending_pre_transfer_value);
+	add("serial_input_timing_mode", state.serial_input_timing_mode);
+	add("serial_frame_mode", state.serial_frame_mode);
+	add("serial_frame_clocks", state.serial_frame_clocks);
+	add("serial_exec_halfcycles", state.serial_exec_halfcycles);
+	add("serial_input_pending_halfcycle", state.serial_input_pending_halfcycle);
+	add("serial_output_pending_halfcycle", state.serial_output_pending_halfcycle);
+	add("sync_polarity_rising", state.sync_polarity_rising);
+	add("serial_output_muted", state.serial_output_muted);
+	add("serial_frame_flip_input", state.serial_frame_flip_input);
+	add("serial_frame_flip_output", state.serial_frame_flip_output);
+	add("update_counter_head", state.update_counter_head);
+	add("update_counter_tail", state.update_counter_tail);
+	add("update_counter_count", state.update_counter_count);
+	add("update_active", state.update_active);
+	add("update_address_run", state.update_address_run);
+	add("cmem", state.cmem);
+	add("dmem0", state.dmem0);
+	add("dmem1", state.dmem1);
+	add("update", state.update);
+	add("update_sa", state.update_sa);
+	add("update_address_run_for_entry", state.update_address_run_for_entry);
+	add("update_enqueue_su", state.update_enqueue_su);
+	add("update_read_delay_seen", state.update_read_delay_seen);
+	return hash;
+}
+
 enum class dsp_board_dsp2_input_mode : u8
 {
 	normal = 0,
@@ -661,6 +757,7 @@ private:
 	u8 m_v55_txd1_decode_bit = 0x00;
 	std::vector<u8> m_midi_tx_sysex;
 	u8 m_dsp_pload_level = 1;
+	bool m_dsp_state_digest = false;
 	u8 m_dsp_empty = 0x07;
 	bool m_card_present = false;
 	bool m_card_write_protect = false;
@@ -719,6 +816,7 @@ void kprop_set_host_led(kprop_host_led_fn fn) { g_kprop_host_led = fn; }
 
 void korgprophecy_state::machine_start()
 {
+	m_dsp_state_digest = std::getenv("KPROP_DSP_STATE_DIGEST") != nullptr;
 	if (const char *e = std::getenv("KPROP_LOG_CONTROL_HEALTH"))
 		m_log_control_health = std::strcmp(e, "0") != 0;
 	if (const char *e = std::getenv("KPROP_LOG_CONTROL_HEALTH_FINAL"))
@@ -789,6 +887,12 @@ void korgprophecy_state::machine_start()
 	m_dsp1->set_dynarec_default(true);
 	m_dsp2->set_dynarec_default(true);
 	m_dsp3->set_dynarec_default(true);
+
+	// One worker may own all three DSPs, their board feedback latches and the
+	// sound graph while V55/H8 run on the scheduler. The host's multi-core
+	// preference turns it on or off between timeslices; output is unchanged.
+	if (!std::getenv("KPROP_TRACE_DSP_SERIAL_OUTPUT_TAG"))
+		configure_dsp_cluster(machine().scheduler(), { &*m_dsp1, &*m_dsp2, &*m_dsp3 });
 
 	// KPSHIP-KEEP: hardware-bit-exact VERIFICATION tap. The DSP serial output that the 06-08 hardware
 	// scoreboard (scripts/korgprophecy_serial_scoreboard.py) and the injection word-compare grade against
@@ -1295,6 +1399,7 @@ void korgprophecy_state::machine_start()
 
 void korgprophecy_state::machine_stop()
 {
+	cluster_shutdown();
 	control_flight_dump();
 	if (m_log_control_health_final)
 	{
@@ -1420,6 +1525,7 @@ void korgprophecy_state::machine_stop()
 
 void korgprophecy_state::machine_reset()
 {
+	cluster_shutdown();
 	m_h8_porta = 0xff;
 	m_h8_portc = 0xff;
 	m_h8_port8 = 0xff;
@@ -1982,7 +2088,34 @@ TIMER_CALLBACK_MEMBER(korgprophecy_state::mailbox_lie_tick)
 
 TIMER_CALLBACK_MEMBER(korgprophecy_state::dsp_board_sync_tick)
 {
+	if (cluster_post(machine().scheduler(), this,
+			[](void *p, u64 value, u64) { static_cast<korgprophecy_state *>(p)->dsp_board_sync_tick(s32(value)); }, param))
+		return;
 	m_dsp_sync_ticks++;
+	if (m_dsp_state_digest && (m_dsp_sync_ticks % 512) == 0)
+	{
+		std::fprintf(stderr, "[dsp-state] tick=%llu empty=%u feedback=%06x,%06x hashes=%016llx,%016llx,%016llx\n",
+			(unsigned long long)m_dsp_sync_ticks, unsigned(m_dsp_empty), m_dsp2_so1_prev[0], m_dsp2_so1_prev[1],
+			(unsigned long long)dsp_state_digest(m_dsp1->debug_capture_snapshot(), m_dsp_sync_ticks == 512 ? 1 : 0),
+			(unsigned long long)dsp_state_digest(m_dsp2->debug_capture_snapshot(), m_dsp_sync_ticks == 512 ? 2 : 0),
+			(unsigned long long)dsp_state_digest(m_dsp3->debug_capture_snapshot(), m_dsp_sync_ticks == 512 ? 3 : 0));
+	}
+	if (m_dsp_state_digest && (m_dsp_sync_ticks % 8192) == 0)
+	{
+		// External delay RAM is not part of debug_snapshot. Inspect the two
+		// private, contiguous 256 KiB RAM mappings without invoking bus handlers.
+		auto ram_digest = [](tms57002_device &dsp) {
+			const auto *ram = static_cast<const u8 *>(dsp.space(AS_DATA).get_read_ptr(0));
+			if (!ram) throw emu_fatalerror("DSP diagnostic cannot inspect delay RAM");
+			u64 hash = 14695981039346656037ULL;
+			for (unsigned i = 0; i < 0x40000; ++i) { hash ^= ram[i]; hash *= 1099511628211ULL; }
+			return hash;
+		};
+		std::fprintf(stderr, "[dsp-memory] tick=%llu hashes=%016llx,%016llx\n",
+			(unsigned long long)m_dsp_sync_ticks,
+			(unsigned long long)ram_digest(*m_dsp1), (unsigned long long)ram_digest(*m_dsp3));
+	}
+
 
 	// Approximate the traced serial graph under the board's 512FS/FS-derived
 	// sample clock. This bypasses MAME's sound-stream pull model so the DSPs can
@@ -2861,6 +2994,7 @@ u8 korgprophecy_state::h8_porta_r()
 
 u8 korgprophecy_state::h8_portb_r()
 {
+	cluster_fence();
 	// PB0-2 are the confirmed direct DSP EMPTY feedback lines. The firmware
 	// polls the PB bit matching the host window it is pacing, so when
 	// KPROP_DSP_HOST_MAP remaps host windows to DSP devices the EMPTY bits
@@ -2891,6 +3025,11 @@ void korgprophecy_state::h8_porta_w(u8 data)
 void korgprophecy_state::update_dsp_mute()
 {
 	const int mute_high = BIT(m_h8_portc, 7);
+	if (cluster_post(machine().scheduler(), this, [](void *p, u64 level, u64) {
+			auto &s = *static_cast<korgprophecy_state *>(p);
+			s.m_dsp1->mute_w(level); s.m_dsp2->mute_w(level); s.m_dsp3->mute_w(level);
+		}, mute_high))
+		return;
 	m_dsp1->mute_w(mute_high);
 	m_dsp2->mute_w(mute_high);
 	m_dsp3->mute_w(mute_high);

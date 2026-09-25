@@ -10,6 +10,360 @@
 
 #include "emu.h"
 #include "debugger.h"
+#include "dspcluster.h"
+
+#include <atomic>
+#include <cerrno>
+#include <cstdlib>
+#include <exception>
+#include <functional>
+#include <system_error>
+#include <thread>
+
+#if defined(__APPLE__)
+#include <pthread.h>
+#include <mach/mach.h>
+#include <mach/thread_policy.h>
+#include <os/os_sync_wait_on_address.h>
+#endif
+
+//**************************************************************************
+//  CONTROLLER/DSP EXECUTION CLUSTER
+//**************************************************************************
+
+// Scheduled clocks belong to the coordinator; actual DSP clocks and state are
+// touched only by the worker, or after an explicit drain while it is idle.
+namespace {
+std::atomic<bool> g_cluster_requested{false};
+std::atomic<u64> g_cluster_generation{0};
+std::atomic<int> g_cluster_status{int(dsp_cluster_status::off)};
+
+// Progress is published every four guest audio frames, or earlier whenever a
+// synchronous observation needs it.
+constexpr unsigned cluster_batch_frames = 4;
+
+// The sleep bit and generation share one atomic modification order. A publisher
+// either sees the waiter asleep and wakes it, or changes the value before wait()
+// can park; unlike a separate flag, this cannot lose a wakeup.
+struct alignas(128) cluster_signal
+{
+	static constexpr u64 sleeping = u64(1) << 63;
+	std::atomic<u64> value{0};
+	u64 load() const { return value.load(std::memory_order_acquire) & ~sleeping; }
+	void publish(u64 generation)
+	{
+		if (value.exchange(generation, std::memory_order_release) & sleeping)
+		{
+#if defined(__APPLE__)
+			const int r = os_sync_wake_by_address_any(&value, sizeof(u64), OS_SYNC_WAKE_BY_ADDRESS_NONE);
+			if (r < 0 && errno != ENOENT) std::abort();
+#else
+			value.notify_one();
+#endif
+		}
+	}
+	void wait(u64 old)
+	{
+		const u64 parked = old | sleeping;
+		if (value.compare_exchange_strong(old, parked, std::memory_order_acq_rel) || old == parked)
+		{
+#if defined(__APPLE__)
+			// Park directly in the kernel; no user-space spin budget.
+			const int r = os_sync_wait_on_address(&value, parked, sizeof(u64), OS_SYNC_WAIT_ON_ADDRESS_NONE);
+			if (r < 0 && errno != EINTR && errno != ENOMEM && errno != EFAULT) std::abort();
+#else
+			value.wait(parked, std::memory_order_acquire);
+#endif
+		}
+	}
+};
+
+struct cluster_entry
+{
+	cluster_callback callback = nullptr;
+	void *object = nullptr;
+	u64 first = 0, second = 0;
+	attotime time;
+	std::array<u32, 3> cycles{};
+	unsigned execute = 0;
+};
+
+struct alignas(128) cluster_chip
+{
+	device_execute_interface *device = nullptr;
+	attotime scheduled_time;
+	u64 scheduled_cycles = 0;
+	u32 pending = 0;
+	bool executing = true;
+	std::function<void(u32, bool)> run;
+	std::function<void()> validate;
+};
+
+struct cluster_group;
+thread_local cluster_group *cluster_context = nullptr;
+thread_local bool cluster_in_consumer = false;
+thread_local attotime cluster_event_time;
+thread_local device_execute_interface *cluster_device = nullptr;
+
+struct cluster_group
+{
+	static constexpr unsigned capacity = 4096;
+	device_scheduler &scheduler;
+	std::array<cluster_chip, 3> chips;
+	std::array<cluster_entry, capacity> queue;
+	cluster_signal requested, completed;
+	std::atomic<bool> stopping{false}, failed{false};
+	std::exception_ptr error;
+	std::thread thread;
+	unsigned staged_frames = 0;
+	u64 written = 0, published = 0, consumed = 0;
+#if defined(__APPLE__)
+	thread_time_constraint_policy_data_t policy{};
+	bool use_policy = false;
+	qos_class_t qos = QOS_CLASS_DEFAULT;
+#endif
+
+	explicit cluster_group(device_scheduler &s) : scheduler(s) { capture_policy(); }
+	~cluster_group()
+	{
+		stopping.store(true, std::memory_order_release);
+		requested.publish(written + 1);
+		if (thread.joinable()) thread.join();
+	}
+	// The worker inherits the coordinator's real-time scheduling policy, so a
+	// real-time producer never waits on an ordinary-priority DSP thread.
+	void capture_policy()
+	{
+#if defined(__APPLE__)
+		pthread_get_qos_class_np(pthread_self(), &qos, nullptr);
+		mach_msg_type_number_t count = THREAD_TIME_CONSTRAINT_POLICY_COUNT;
+		boolean_t is_default = false;
+		use_policy = thread_policy_get(pthread_mach_thread_np(pthread_self()),
+			THREAD_TIME_CONSTRAINT_POLICY, reinterpret_cast<thread_policy_t>(&policy),
+			&count, &is_default) == KERN_SUCCESS && !is_default && policy.period;
+#endif
+	}
+	void apply_policy()
+	{
+#if defined(__APPLE__)
+		pthread_set_qos_class_self_np(qos, 0);
+		if (use_policy)
+			thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY,
+				reinterpret_cast<thread_policy_t>(&policy), THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+#endif
+	}
+	bool start()
+	{
+		try { thread = std::thread([this] { loop(); }); }
+		catch (const std::system_error &e)
+		{
+			std::fprintf(stderr, "DSP cluster worker creation failed; using serial execution: %s\n", e.what());
+			return false;
+		}
+		return true;
+	}
+	void check_error()
+	{
+		if (failed.load(std::memory_order_acquire)) std::rethrow_exception(error);
+	}
+	void execute(const cluster_entry &entry)
+	{
+		struct restore
+		{
+			device_execute_interface *device = cluster_device;
+			bool consumer = cluster_in_consumer;
+			attotime time = cluster_event_time;
+			~restore() { cluster_device = device; cluster_in_consumer = consumer; cluster_event_time = time; }
+		} guard;
+		cluster_in_consumer = true;
+		cluster_event_time = entry.time;
+		cluster_device = nullptr;
+		for (unsigned i = 0; i < 3; ++i)
+			if (entry.cycles[i])
+			{
+				cluster_device = chips[i].device;
+				chips[i].run(entry.cycles[i], entry.execute & (1U << i));
+			}
+		cluster_device = nullptr;
+		if (entry.callback) entry.callback(entry.object, entry.first, entry.second);
+	}
+	void loop()
+	{
+#if defined(__APPLE__)
+		pthread_setname_np("Profligacy DSP cluster");
+#endif
+		cluster_context = this;
+		apply_policy();
+		for (;;)
+		{
+			u64 end;
+			while ((end = requested.load()) == consumed && !stopping.load(std::memory_order_acquire))
+				requested.wait(consumed);
+			if (stopping.load(std::memory_order_acquire)) break;
+			try
+			{
+				while (consumed != end)
+				{
+					execute(queue[consumed % capacity]);
+					++consumed;
+				}
+			}
+			catch (...)
+			{
+				error = std::current_exception();
+				failed.store(true, std::memory_order_release);
+				// A failure before consuming the first entry must still change
+				// the wait word; publishing the unchanged cursor can lose a
+				// wake between the coordinator's flag check and kernel park.
+				completed.publish(cluster_signal::sleeping - 1);
+				return;
+			}
+			completed.publish(consumed);
+		}
+	}
+	void wait_for(u64 target)
+	{
+		for (u64 done; (done = completed.load()) < target; )
+		{
+			check_error();
+			completed.wait(done);
+		}
+		check_error();
+	}
+	void publish()
+	{
+		staged_frames = 0;
+		if (written == published) return;
+		published = written;
+		requested.publish(published);
+	}
+	void append(const cluster_entry &entry)
+	{
+		check_error();
+		// A full queue applies backpressure by draining published work.
+		if (written - completed.load() == capacity)
+		{
+			publish();
+			wait_for(published);
+		}
+		queue[written++ % capacity] = entry;
+	}
+	void flush_work()
+	{
+		cluster_entry entry;
+		bool any = false;
+		for (unsigned i = 0; i < 3; ++i)
+		{
+			entry.cycles[i] = chips[i].pending;
+			if (chips[i].executing) entry.execute |= 1U << i;
+			any |= chips[i].pending != 0;
+			chips[i].pending = 0;
+		}
+		if (any) append(entry);
+	}
+	void fence()
+	{
+		flush_work();
+		publish();
+		wait_for(published);
+		for (auto &chip : chips) chip.validate();
+	}
+};
+
+thread_local std::unique_ptr<cluster_group> cluster_owner;
+thread_local u64 cluster_failed_generation = ~u64(0);
+
+// Checked every timeslice; write only on change, so polling it stays cheap.
+void cluster_set_status(dsp_cluster_status status)
+{
+	if (g_cluster_status.load(std::memory_order_relaxed) != int(status))
+		g_cluster_status.store(int(status), std::memory_order_release);
+}
+
+} // anonymous namespace
+
+bool cluster_consumer() { return cluster_in_consumer; }
+
+bool cluster_post(device_scheduler &scheduler, void *object, cluster_callback callback, u64 first, u64 second)
+{
+	if (!cluster_context || cluster_in_consumer) return false;
+	auto &group = *cluster_context;
+	if (&scheduler != &group.scheduler) throw emu_fatalerror("DSP cluster scheduler mismatch");
+	group.flush_work();
+	cluster_entry entry;
+	entry.callback = callback;
+	entry.object = object;
+	entry.first = first;
+	entry.second = second;
+	entry.time = scheduler.time();
+	group.append(entry);
+	return true;
+}
+
+void cluster_fence()
+{
+	if (cluster_context && !cluster_in_consumer) cluster_context->fence();
+}
+
+void cluster_audio_boundary(const device_t &device)
+{
+	if (!cluster_context || cluster_in_consumer) return;
+	auto &group = *cluster_context;
+	if (&device != &group.chips[2].device->device()) return;
+	if (++group.staged_frames >= cluster_batch_frames)
+	{
+		group.flush_work();
+		group.publish();
+	}
+}
+
+void cluster_shutdown()
+{
+	if (!cluster_owner) return;
+	// Drain every queued interval so the actual clocks reach their scheduled
+	// endpoints before serial execution resumes; then join the worker.
+	try { cluster_owner->fence(); }
+	catch (...) { cluster_owner.reset(); cluster_context = nullptr; cluster_set_status(dsp_cluster_status::off); throw; }
+	cluster_owner.reset();
+	cluster_context = nullptr;
+	cluster_set_status(dsp_cluster_status::off);
+}
+
+void cluster_refresh_policy()
+{
+	if (!cluster_context || cluster_in_consumer) return;
+	auto &group = *cluster_context;
+	group.fence();
+	group.capture_policy();
+	cluster_post(group.scheduler, &group, [](void *p, u64, u64) { static_cast<cluster_group *>(p)->apply_policy(); });
+	group.fence();
+}
+
+void configure_dsp_cluster(device_scheduler &scheduler, std::array<device_execute_interface *, 3> devices)
+{
+	if (!devices[0] || !devices[1] || !devices[2] || devices[0] == devices[1] ||
+		devices[1] == devices[2] || devices[0] == devices[2])
+		throw emu_fatalerror("Invalid DSP cluster");
+	scheduler.m_cluster_devices = devices;
+}
+
+void set_dsp_cluster_enabled(bool enabled)
+{
+	if (g_cluster_requested.exchange(enabled, std::memory_order_acq_rel) != enabled)
+		g_cluster_generation.fetch_add(1, std::memory_order_acq_rel);
+}
+
+bool dsp_cluster_enabled()
+{
+	return g_cluster_requested.load(std::memory_order_acquire);
+}
+
+dsp_cluster_status get_dsp_cluster_status()
+{
+	return dsp_cluster_status(g_cluster_status.load(std::memory_order_acquire));
+}
+
+
 
 //**************************************************************************
 //  DEBUGGING
@@ -136,6 +490,7 @@ bool emu_timer::enable(bool enable) noexcept
 
 void emu_timer::adjust(attotime start_delay, s32 param, const attotime &period) noexcept
 {
+	if (cluster_consumer()) fatalerror("DSP cluster worker attempted to mutate a scheduler timer");
 	assert(m_scheduler);
 
 	// if this is the callback timer, mark it modified
@@ -314,6 +669,8 @@ device_scheduler::device_scheduler(running_machine &machine) :
 
 device_scheduler::~device_scheduler()
 {
+	try { cluster_shutdown(); }
+	catch (...) { }
 	// remove all timers
 	while (m_inactive_timers)
 		m_timer_allocator.reclaim(timer_list_remove(*m_inactive_timers));
@@ -328,6 +685,10 @@ device_scheduler::~device_scheduler()
 
 attotime device_scheduler::time() const noexcept
 {
+	// Worker callbacks see the captured event time, or their own chip's clock.
+	if (cluster_in_consumer)
+		return cluster_device ? cluster_device->local_time() : cluster_event_time;
+
 	// if we're currently in a callback, use the timer's expiration time as a base
 	if (m_callback_timer != nullptr)
 		return m_callback_timer_expire_time;
@@ -335,6 +696,11 @@ attotime device_scheduler::time() const noexcept
 	// if we're executing as a particular CPU, use its local time as a base
 	// otherwise, return the global base time
 	return (m_executing_device != nullptr) ? m_executing_device->local_time() : m_basetime;
+}
+
+device_execute_interface *device_scheduler::currently_executing() const noexcept
+{
+	return cluster_in_consumer ? cluster_device : m_executing_device;
 }
 
 
@@ -393,6 +759,7 @@ inline void device_scheduler::apply_suspend_changes()
 void device_scheduler::timeslice()
 {
 	bool call_debugger = ((machine().debug_flags & DEBUG_FLAG_ENABLED) != 0);
+	update_dsp_cluster(call_debugger || g_profiler.enabled());
 
 	// build the execution list if we don't have one yet
 	if (UNEXPECTED(m_execute_list == nullptr))
@@ -422,6 +789,7 @@ void device_scheduler::timeslice()
 		// loop over all CPUs
 		for (device_execute_interface *exec = m_execute_list; exec != nullptr; exec = exec->m_nextexec)
 		{
+			if (cluster_context && advance_dsp_cluster(exec, target)) continue;
 			// only process if this CPU is executing or truly halted (not yielding)
 			// and if our target is later than the CPU's current time (coarse check)
 			if (EXPECTED((exec->m_suspend == 0 || exec->m_eatcycles) && target.seconds() >= exec->m_localtime.seconds()))
@@ -503,6 +871,101 @@ void device_scheduler::timeslice()
 
 	// execute timers
 	execute_timers();
+}
+
+
+//-------------------------------------------------
+//  update_dsp_cluster - apply the multi-core DSP
+//  preference between timeslices, where no
+//  device is executing
+//-------------------------------------------------
+
+void device_scheduler::update_dsp_cluster(bool blocked)
+{
+	if (!m_cluster_devices[0]) return;
+	const bool requested = g_cluster_requested.load(std::memory_order_acquire);
+	const u64 generation = g_cluster_generation.load(std::memory_order_acquire);
+	if (blocked || !requested || cluster_failed_generation == generation)
+	{
+		if (cluster_owner) cluster_shutdown();
+		cluster_set_status(requested && !blocked ? dsp_cluster_status::unavailable : dsp_cluster_status::off);
+		return;
+	}
+	if (cluster_owner) return;
+
+	// Shadow clocks start from the actual clocks; nothing is queued yet.
+	auto group = std::make_unique<cluster_group>(*this);
+	for (unsigned i = 0; i < 3; ++i)
+	{
+		device_execute_interface *exec = m_cluster_devices[i];
+		auto &chip = group->chips[i];
+		chip.device = exec;
+		chip.scheduled_time = exec->m_localtime;
+		chip.scheduled_cycles = exec->m_totalcycles;
+		chip.run = [exec](u32 cycles, bool execute) {
+			if (cycles >= u32(exec->m_cycles_per_second))
+				throw emu_fatalerror("DSP cluster interval exceeds the bounded execution contract");
+			exec->m_cycles_running = cycles;
+			exec->m_cycles_stolen = 0;
+			*exec->m_icountptr = execute ? cycles : 0;
+			if (execute) exec->run();
+			if (*exec->m_icountptr || exec->m_cycles_stolen)
+				throw emu_fatalerror("DSP cluster device failed to consume its full cycle budget");
+			exec->m_totalcycles += cycles;
+			exec->m_localtime += attotime(0, exec->m_attoseconds_per_cycle * cycles);
+		};
+		chip.validate = [exec, &chip] {
+			if (exec->m_localtime != chip.scheduled_time || exec->m_totalcycles != chip.scheduled_cycles)
+				throw emu_fatalerror("DSP cluster device %s changed its scheduled endpoint", exec->device().tag());
+		};
+	}
+	if (!group->start())
+	{
+		cluster_failed_generation = generation;
+		cluster_set_status(dsp_cluster_status::unavailable);
+		return;
+	}
+	cluster_owner = std::move(group);
+	cluster_context = cluster_owner.get();
+	cluster_set_status(dsp_cluster_status::active);
+}
+
+
+//-------------------------------------------------
+//  advance_dsp_cluster - queue a cluster DSP's
+//  interval instead of executing it here
+//-------------------------------------------------
+
+bool device_scheduler::advance_dsp_cluster(device_execute_interface *exec, attotime &target)
+{
+	auto &group = *cluster_context;
+	const int index = exec == group.chips[0].device ? 0 : exec == group.chips[1].device ? 1 :
+		exec == group.chips[2].device ? 2 : -1;
+	if (index < 0) return false;
+
+	// Same cycle computation as the serial loop, applied to the shadow clock.
+	auto &chip = group.chips[index];
+	const auto local = chip.scheduled_time;
+	if ((exec->m_suspend == 0 || exec->m_eatcycles) && target.seconds() >= local.seconds())
+	{
+		attoseconds_t delta = target.attoseconds() - local.attoseconds();
+		if (delta < 0 && target.seconds() > local.seconds()) delta += ATTOSECONDS_PER_SECOND;
+		if (!exec->m_attoseconds_per_cycle)
+			throw emu_fatalerror("DSP cluster device clock stopped");
+		if (delta >= exec->m_attoseconds_per_cycle)
+		{
+			const int ran = divu_64x32(u64(delta) >> exec->m_divshift, exec->m_divisor);
+			const bool execute = exec->m_suspend == 0;
+			if ((chip.pending && chip.executing != execute) || u32(ran) > u32(INT_MAX) - chip.pending)
+				group.flush_work();
+			chip.executing = execute;
+			chip.pending += ran;
+			chip.scheduled_cycles += ran;
+			chip.scheduled_time += attotime(0, exec->m_attoseconds_per_cycle * ran);
+			if (chip.scheduled_time < target) target = std::max(chip.scheduled_time, m_basetime);
+		}
+	}
+	return true;
 }
 
 
@@ -671,6 +1134,7 @@ void device_scheduler::timed_trigger(s32 param)
 
 void device_scheduler::presave()
 {
+	cluster_shutdown();
 	// report the timer state after a log
 	LOG("Prior to saving state:\n");
 	u32 index = 0;
@@ -688,6 +1152,9 @@ void device_scheduler::presave()
 
 void device_scheduler::postload()
 {
+	// Loading replaces device state behind the worker; the product never loads
+	// MAME states, and a cluster must not be active if something else does.
+	if (cluster_context) throw emu_fatalerror("DSP cluster must be disabled before loading state");
 	// remove all timers and make a private list of permanent ones
 	emu_timer *private_list = nullptr;
 	while (m_inactive_timers)
