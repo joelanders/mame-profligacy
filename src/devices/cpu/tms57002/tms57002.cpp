@@ -83,7 +83,7 @@ tms57002_device::tms57002_device(const machine_config &mconfig, const char *tag,
 	, m_debug_mpy_smhd_forward_pc(-1)
 	, m_debug_smhd_raw_path(false)
 	, m_debug_smld_raw_path(false)
-	, st0(0), st1(0), sti(0), txrd(0)
+	, st0(0), st1(0), sti(0), aacc(0), xoa(0), xba(0), xwr(0), xrd(0), txrd(0), creg(0)
 	, m_pending_pre_transfer(pending_pre_transfer_type::none)
 	, m_dready_callback(*this)
 	, m_pc0_callback(*this)
