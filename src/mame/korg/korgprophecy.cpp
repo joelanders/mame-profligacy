@@ -385,8 +385,6 @@ private:
 	void v55_p7_w(u8 data);
 	u16 v55_scratch_r(offs_t offset, u16 mem_mask = ~0);
 	void v55_scratch_w(offs_t offset, u16 data, u16 mem_mask = ~0);
-	u16 sysram_r(offs_t offset, u16 mem_mask = ~0);
-	void sysram_w(offs_t offset, u16 data, u16 mem_mask = ~0);
 	template <unsigned Channel> u8 v55_adc_r();
 	template <unsigned Channel> u16 h8_adc_r();
 	u8 h8_porta_r();
@@ -407,8 +405,8 @@ private:
 	void midi_rxd1_w(int state);
 	void h8_txd0_w(int state);
 	TIMER_CALLBACK_MEMBER(h8_txd_sync);
-	u8 h8_sram_r8(offs_t offset);
-	void h8_sram_w8(offs_t offset, u8 data);
+	u16 h8_sram_r(offs_t offset);
+	void h8_sram_w(offs_t offset, u16 data, u16 mem_mask = ~0);
 	u8 h8_nocycle_r8(u32 addr);
 	u16 h8_nocycle_r16(u32 addr);
 	u32 h8_nocycle_r32(u32 addr);
@@ -2841,17 +2839,6 @@ void korgprophecy_state::v55_scratch_w(offs_t offset, u16 data, u16 mem_mask)
 	COMBINE_DATA(&m_v55_scratch[offset & 0x7f]);
 }
 
-u16 korgprophecy_state::sysram_r(offs_t offset, u16 mem_mask)
-{
-	const u16 data = m_sysram[offset];
-	return data;
-}
-
-void korgprophecy_state::sysram_w(offs_t offset, u16 data, u16 mem_mask)
-{
-	COMBINE_DATA(&m_sysram[offset]);
-}
-
 u8 korgprophecy_state::h8_porta_r()
 {
 	// PA0/2/3/4 drive the shared DSP control bus; returning the current latch
@@ -3686,14 +3673,21 @@ u32 korgprophecy_state::h8_nocycle_r32(u32 addr)
 	return (u32(h8_nocycle_r16(addr)) << 16) | h8_nocycle_r16(addr + 2);
 }
 
-u8 korgprophecy_state::h8_sram_r8(offs_t offset)
+// The SRAM array stays in bus byte order (big-endian), so a 16-bit bus access
+// is one handler call that assembles or splits the two bytes itself.
+u16 korgprophecy_state::h8_sram_r(offs_t offset)
 {
-	return m_h8_sram[offset & 0x1ffff];
+	const u8 *const p = &m_h8_sram[(offset << 1) & 0x1fffe];
+	return (u16(p[0]) << 8) | p[1];
 }
 
-void korgprophecy_state::h8_sram_w8(offs_t offset, u8 data)
+void korgprophecy_state::h8_sram_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	m_h8_sram[offset & 0x1ffff] = data;
+	u8 *const p = &m_h8_sram[(offset << 1) & 0x1fffe];
+	if (ACCESSING_BITS_8_15)
+		p[0] = data >> 8;
+	if (ACCESSING_BITS_0_7)
+		p[1] = data;
 }
 
 u8 korgprophecy_state::h8_dsp_r8(offs_t offset)
@@ -3951,7 +3945,7 @@ void korgprophecy_state::prog_map(address_map &map)
 	//   A19=0,A18=0 -> onboard battery-backed system SRAM (IC9/IC10)
 	//   A19=0,A18=1 -> card window
 	//   A19=1       -> system ROM
-	map(0x00000, 0x3ffff).rw(FUNC(korgprophecy_state::sysram_r), FUNC(korgprophecy_state::sysram_w)).share("sysram");
+	map(0x00000, 0x3ffff).ram().share("sysram");
 	map(0x40000, 0x7ffff).ram();
 	map(0x80000, 0xfffff).rom().region("maincpu", 0);
 }
@@ -3962,7 +3956,7 @@ void korgprophecy_state::h8_map(address_map &map)
 	// The KiCad export is incomplete, so keep the conservative mirrored layout
 	// until board traces or execution logs confirm the exact windows.
 	map(0x000000, 0x07ffff).rom().region("subcpu", 0);
-	map(0x040000, 0x05ffff).rw(FUNC(korgprophecy_state::h8_sram_r8), FUNC(korgprophecy_state::h8_sram_w8)).mirror(0x020000);
+	map(0x040000, 0x05ffff).rw(FUNC(korgprophecy_state::h8_sram_r), FUNC(korgprophecy_state::h8_sram_w)).mirror(0x020000);
 	map(0x0c0000, 0x0c0007).rw(FUNC(korgprophecy_state::h8_dsp_r8), FUNC(korgprophecy_state::h8_dsp_w8));
 }
 
