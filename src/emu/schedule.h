@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #ifndef __EMU_H__
 #error Dont include this file directly; include emu.h instead.
 #endif
@@ -106,11 +108,21 @@ public:
 	device_scheduler(running_machine &machine);
 	~device_scheduler();
 
+	// Number of live DSP cluster groups in the process.  Worker-thread state
+	// can only be set while one exists, so hot paths test this plain counter
+	// before any thread-local lookup.
+	static std::atomic<int> s_cluster_groups;
+
 	// getters
 	running_machine &machine() const noexcept { return m_machine; }
 	attotime time() const noexcept;
 	emu_timer *first_timer() const noexcept { return m_timer_list; }
-	device_execute_interface *currently_executing() const noexcept;
+	device_execute_interface *currently_executing() const noexcept
+	{
+		// The cluster worker has its own notion of the executing device; it can
+		// only exist while this counter is nonzero.
+		return UNEXPECTED(s_cluster_groups.load(std::memory_order_relaxed) != 0) ? currently_executing_cluster() : m_executing_device;
+	}
 	bool can_save() const;
 
 	// execution
@@ -144,6 +156,8 @@ private:
 	void rebuild_execute_list();
 	void apply_suspend_changes();
 	void update_dsp_cluster(bool blocked);
+	attotime time_cluster() const noexcept;
+	device_execute_interface *currently_executing_cluster() const noexcept;
 	bool advance_dsp_cluster(device_execute_interface *exec, attotime &target);
 
 	// timer helpers

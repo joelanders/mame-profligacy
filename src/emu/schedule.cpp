@@ -33,6 +33,8 @@
 
 // Scheduled clocks belong to the coordinator; actual DSP clocks and state are
 // touched only by the worker, or after an explicit drain while it is idle.
+std::atomic<int> device_scheduler::s_cluster_groups{0};
+
 namespace {
 std::atomic<bool> g_cluster_requested{false};
 std::atomic<u64> g_cluster_generation{0};
@@ -123,12 +125,17 @@ struct cluster_group
 	qos_class_t qos = QOS_CLASS_DEFAULT;
 #endif
 
-	explicit cluster_group(device_scheduler &s) : scheduler(s) { capture_policy(); }
+	explicit cluster_group(device_scheduler &s) : scheduler(s)
+	{
+		device_scheduler::s_cluster_groups.fetch_add(1, std::memory_order_relaxed);
+		capture_policy();
+	}
 	~cluster_group()
 	{
 		stopping.store(true, std::memory_order_release);
 		requested.publish(written + 1);
 		if (thread.joinable()) thread.join();
+		device_scheduler::s_cluster_groups.fetch_sub(1, std::memory_order_relaxed);
 	}
 	// The worker inherits the coordinator's real-time scheduling policy, so a
 	// real-time producer never waits on an ordinary-priority DSP thread.
@@ -270,8 +277,16 @@ struct cluster_group
 	}
 };
 
+// Thread-local reads stay in functions that are never inlined into a caller
+// that tests the group counter first.  Otherwise the compiler computes the
+// thread-local address before the test and the lookup stays on the hot path.
+inline bool cluster_possible() { return UNEXPECTED(device_scheduler::s_cluster_groups.load(std::memory_order_relaxed) != 0); }
+[[gnu::noinline]] bool cluster_worker_thread_slow() { return cluster_in_consumer; }
+inline bool cluster_worker_thread() { return cluster_possible() && cluster_worker_thread_slow(); }
+
 thread_local std::unique_ptr<cluster_group> cluster_owner;
 thread_local u64 cluster_failed_generation = ~u64(0);
+[[gnu::noinline]] bool cluster_owner_present_slow() { return bool(cluster_owner); }
 
 // Checked every timeslice; write only on change, so polling it stays cheap.
 void cluster_set_status(dsp_cluster_status status)
@@ -282,9 +297,9 @@ void cluster_set_status(dsp_cluster_status status)
 
 } // anonymous namespace
 
-bool cluster_consumer() { return cluster_in_consumer; }
+bool cluster_consumer() { return cluster_worker_thread(); }
 
-bool cluster_post(device_scheduler &scheduler, void *object, cluster_callback callback, u64 first, u64 second)
+[[gnu::noinline]] static bool cluster_post_slow(device_scheduler &scheduler, void *object, cluster_callback callback, u64 first, u64 second)
 {
 	if (!cluster_context || cluster_in_consumer) return false;
 	auto &group = *cluster_context;
@@ -300,12 +315,22 @@ bool cluster_post(device_scheduler &scheduler, void *object, cluster_callback ca
 	return true;
 }
 
-void cluster_fence()
+bool cluster_post(device_scheduler &scheduler, void *object, cluster_callback callback, u64 first, u64 second)
+{
+	return cluster_possible() && cluster_post_slow(scheduler, object, callback, first, second);
+}
+
+[[gnu::noinline]] static void cluster_fence_slow()
 {
 	if (cluster_context && !cluster_in_consumer) cluster_context->fence();
 }
 
-void cluster_audio_boundary(const device_t &device)
+void cluster_fence()
+{
+	if (cluster_possible()) cluster_fence_slow();
+}
+
+[[gnu::noinline]] static void cluster_audio_boundary_slow(const device_t &device)
 {
 	if (!cluster_context || cluster_in_consumer) return;
 	auto &group = *cluster_context;
@@ -315,6 +340,11 @@ void cluster_audio_boundary(const device_t &device)
 		group.flush_work();
 		group.publish();
 	}
+}
+
+void cluster_audio_boundary(const device_t &device)
+{
+	if (cluster_possible()) cluster_audio_boundary_slow(device);
 }
 
 void cluster_shutdown()
@@ -685,9 +715,8 @@ device_scheduler::~device_scheduler()
 
 attotime device_scheduler::time() const noexcept
 {
-	// Worker callbacks see the captured event time, or their own chip's clock.
-	if (cluster_in_consumer)
-		return cluster_device ? cluster_device->local_time() : cluster_event_time;
+	if (cluster_possible())
+		return time_cluster();
 
 	// if we're currently in a callback, use the timer's expiration time as a base
 	if (m_callback_timer != nullptr)
@@ -698,7 +727,19 @@ attotime device_scheduler::time() const noexcept
 	return (m_executing_device != nullptr) ? m_executing_device->local_time() : m_basetime;
 }
 
-device_execute_interface *device_scheduler::currently_executing() const noexcept
+[[gnu::noinline]] attotime device_scheduler::time_cluster() const noexcept
+{
+	// Worker callbacks see the captured event time, or their own chip's clock.
+	if (cluster_in_consumer)
+		return cluster_device ? cluster_device->local_time() : cluster_event_time;
+
+	if (m_callback_timer != nullptr)
+		return m_callback_timer_expire_time;
+
+	return (m_executing_device != nullptr) ? m_executing_device->local_time() : m_basetime;
+}
+
+[[gnu::noinline]] device_execute_interface *device_scheduler::currently_executing_cluster() const noexcept
 {
 	return cluster_in_consumer ? cluster_device : m_executing_device;
 }
@@ -761,6 +802,10 @@ void device_scheduler::timeslice()
 	bool call_debugger = ((machine().debug_flags & DEBUG_FLAG_ENABLED) != 0);
 	update_dsp_cluster(call_debugger || g_profiler.enabled());
 
+	// A group is only created by the call above, so one test covers the whole
+	// timeslice.  If a group is torn down part-way, its context reads as null.
+	const bool cluster_maybe = cluster_possible();
+
 	// build the execution list if we don't have one yet
 	if (UNEXPECTED(m_execute_list == nullptr))
 		rebuild_execute_list();
@@ -789,7 +834,7 @@ void device_scheduler::timeslice()
 		// loop over all CPUs
 		for (device_execute_interface *exec = m_execute_list; exec != nullptr; exec = exec->m_nextexec)
 		{
-			if (cluster_context && advance_dsp_cluster(exec, target)) continue;
+			if (cluster_maybe && cluster_context && advance_dsp_cluster(exec, target)) continue;
 			// only process if this CPU is executing or truly halted (not yielding)
 			// and if our target is later than the CPU's current time (coarse check)
 			if (EXPECTED((exec->m_suspend == 0 || exec->m_eatcycles) && target.seconds() >= exec->m_localtime.seconds()))
@@ -887,7 +932,7 @@ void device_scheduler::update_dsp_cluster(bool blocked)
 	const u64 generation = g_cluster_generation.load(std::memory_order_acquire);
 	if (blocked || !requested || cluster_failed_generation == generation)
 	{
-		if (cluster_owner) cluster_shutdown();
+		if (cluster_possible() && cluster_owner_present_slow()) cluster_shutdown();
 		cluster_set_status(requested && !blocked ? dsp_cluster_status::unavailable : dsp_cluster_status::off);
 		return;
 	}
