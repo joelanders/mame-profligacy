@@ -42,7 +42,8 @@ h8_device::h8_device(const machine_config &mconfig, device_type type, const char
 	m_TMP1(0), m_TMP2(0), m_TMPR(0), m_inst_state(0), m_inst_substate(0), m_icount(0), m_bcount(0),
 	m_last_memory_access_cycles(0),
 	m_irq_vector(0), m_taken_irq_vector(0), m_irq_level(0), m_taken_irq_level(0), m_irq_nmi(false),
-	m_standby_pending(false), m_standby_time(0), m_nvram_defval(0), m_nvram_battery(true)
+	m_standby_pending(false), m_standby_time(0), m_nvram_defval(0), m_nvram_battery(true),
+	m_next_event(0), m_next_event_valid(false)
 {
 	m_supports_advanced = false;
 	m_mode_advanced = false;
@@ -205,6 +206,7 @@ void h8_device::device_start()
 
 void h8_device::device_reset()
 {
+	m_next_event_valid = false;
 	m_cycles_base = machine().time().as_ticks(clock());
 	m_inst_state = STATE_RESET;
 	m_inst_substate = 0;
@@ -334,8 +336,16 @@ void h8_device::request_state(int state)
 	m_requested_state = state;
 }
 
+void h8_device::device_post_load()
+{
+	m_next_event_valid = false;
+}
+
 void h8_device::recompute_bcount(u64 event_time)
 {
+	m_next_event = event_time;
+	m_next_event_valid = true;
+
 	if(!event_time || event_time >= total_cycles() + m_icount) {
 		m_bcount = 0;
 		return;
@@ -345,7 +355,15 @@ void h8_device::recompute_bcount(u64 event_time)
 
 void h8_device::execute_run()
 {
-	internal_update(total_cycles());
+	// Every peripheral was polled when m_next_event was recorded, and each
+	// change to a peripheral's schedule since then came through a full
+	// update.  On a device whose peripherals do nothing before their event
+	// is due, polling them again before that time only recomputes the same
+	// event, so recompute the countdown for the new timeslice directly.
+	if(m_next_event_valid && idle_entry_update_skippable() && (!m_next_event || total_cycles() < m_next_event))
+		recompute_bcount(m_next_event);
+	else
+		internal_update(total_cycles());
 
 	m_icount -= m_count_before_instruction_step;
 	if(m_icount < 0) {
@@ -518,6 +536,13 @@ bool h8_device::interrupt_post_accept_prefetch() const
 {
 	// Preserve established timing on devices whose exception bus sequence has
 	// not been verified against a hardware manual.
+	return false;
+}
+
+bool h8_device::idle_entry_update_skippable() const
+{
+	// Only safe where every peripheral's internal_update() is known to leave
+	// its state alone until its event is due.  Devices opt in after review.
 	return false;
 }
 

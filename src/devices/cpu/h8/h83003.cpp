@@ -362,6 +362,15 @@ bool h83003_device::internal_phase_checkpointing_enabled() const
 	return m_external_bus_timing;
 }
 
+bool h83003_device::idle_entry_update_skippable() const
+{
+	// The A/D converter, both SCIs and the five 16-bit timer channels return
+	// without touching their state until their event is due.  The watchdog
+	// counts lazily: its register accesses and its overflow event settle
+	// TCNT themselves, and it ignores updates that go backwards in time.
+	return true;
+}
+
 void h83003_device::interrupt_instruction_boundary()
 {
 	m_intc->instruction_boundary();

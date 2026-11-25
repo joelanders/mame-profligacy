@@ -122,6 +122,7 @@ protected:
 	virtual void interrupt_priority_complete() override;
 	virtual bool interrupt_post_accept_prefetch() const override;
 	virtual bool internal_phase_checkpointing_enabled() const override;
+	virtual bool idle_entry_update_skippable() const override;
 	virtual void interrupt_instruction_boundary() override;
 	virtual int dma_bus_acquisition_cycles(int channel) const override;
 	virtual int memory_access_cycles(u32 address, int size) const override;
