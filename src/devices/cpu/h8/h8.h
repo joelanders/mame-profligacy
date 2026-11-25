@@ -156,6 +156,7 @@ protected:
 	virtual void device_config_complete() override;
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual void device_post_load() override ATTR_COLD;
 
 	// device_execute_interface implementation
 	virtual bool cpu_is_interruptible() const override { return true; }
@@ -224,6 +225,12 @@ protected:
 	u16 m_nvram_defval;
 	bool m_nvram_battery;
 
+	// Earliest peripheral event from the last full peripheral update, and
+	// whether it is still current.  Not saved: it is rebuilt by the next
+	// full update after a reset or a state load.
+	u64 m_next_event;
+	bool m_next_event_valid;
+
 	virtual void do_exec_full();
 	virtual void do_exec_partial();
 	static void add_event(u64 &event_time, u64 new_event);
@@ -241,6 +248,7 @@ protected:
 	virtual void interrupt_priority_complete();
 	virtual bool interrupt_post_accept_prefetch() const;
 	virtual bool internal_phase_checkpointing_enabled() const;
+	virtual bool idle_entry_update_skippable() const;
 	virtual void interrupt_instruction_boundary();
 	virtual int dma_bus_acquisition_cycles(int channel) const;
 	virtual int memory_access_cycles(u32 address, int size) const;
