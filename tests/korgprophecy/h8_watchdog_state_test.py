@@ -6,6 +6,10 @@ The H8/3003 manual specifies two independent rules: OVF clears only after
 software reads it as one and then writes zero, while interval mode requests an
 interrupt at every TCNT overflow. This test extracts the relevant production
 methods into a small type-compatible C++ harness and checks both rules.
+
+It also checks that TCNT never counts backwards. The H8 core can present an
+update time a few cycles before the previous one, and one prescaler step back
+with TCNT at zero used to wrap into a spurious overflow.
 """
 
 from __future__ import annotations
@@ -189,8 +193,31 @@ int main()
     ok &= check((timer.m_tcsr & 0x80) == 0,
                 "read-one then write-zero did not clear OVF");
 
+    // The CPU core can present a time a few cycles before the previous
+    // update. One prescaler step back with TCNT at zero must not count.
+    cpu_stub rearm_cpu;
+    intc_stub rearm_intc;
+    h8_watchdog_device rearm(rearm_cpu, rearm_intc);
+    rearm_cpu.cycles = 0x1001;
+    rearm.wd_w(0, 0xa53c);
+    rearm.tcnt_update(0x0fff);
+    ok &= check(rearm_intc.requests == 0,
+                "update before the previous one requested an interval IRQ");
+    ok &= check((rearm.m_tcsr & 0x80) == 0,
+                "update before the previous one set OVF");
+    ok &= check(rearm.m_tcnt == 0, "update before the previous one changed TCNT");
+
+    // Counting then continues from the later time: 0x3d needs 195 more
+    // prescaler steps, so the overflow lands at cycle 0xd300 and not before.
+    rearm.wd_w(0, 0x5a3d);
+    rearm.tcnt_update(0xd2ff);
+    ok &= check(rearm_intc.requests == 0, "interval IRQ arrived a step early");
+    rearm.tcnt_update(0xd300);
+    ok &= check(rearm_intc.requests == 1,
+                "overflow after an ignored update did not request IRQ");
+
     if (ok)
-        std::puts("PASS: H8 watchdog OVF clearing and repeated interval IRQs");
+        std::puts("PASS: H8 watchdog OVF clearing, repeated interval IRQs and monotonic counting");
     return ok ? 0 : 1;
 }}
 """

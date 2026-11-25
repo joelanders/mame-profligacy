@@ -55,6 +55,17 @@ void h8_watchdog_device::tcnt_update(u64 cur_time)
 		int shift = (m_type == S ? div_s : div_bh)[m_tcsr & TCSR_CKS];
 		if(!cur_time)
 			cur_time = m_cpu->total_cycles();
+
+		// The CPU can present a time a few cycles before the previous update:
+		// its timeslice-entry update excludes the cycles the last instruction
+		// ran past the previous slice, and an SCI clock event updates the CPU
+		// at the current time from inside an update at the earlier event time.
+		// TCNT never counts backwards, so such an update changes nothing.
+		// Counting it would make one prescaler step back with TCNT at zero
+		// wrap the unsigned step difference into a spurious overflow.
+		if(cur_time < m_tcnt_cycle_base)
+			return;
+
 		u64 spos = m_tcnt_cycle_base >> shift;
 		u64 epos = cur_time >> shift;
 
