@@ -482,10 +482,23 @@ void nec_common_device::do_prefetch()
 	}
 }
 
+u8 nec_common_device::fetch_code_byte(offs_t address)
+{
+	switch (m_fetch_path)
+	{
+	case fetch_path::BUS8:
+		return m_cache8.read_byte(address);
+	case fetch_path::BUS16_TRANSLATED:
+		return m_cache16.read_byte(v33_translate(address));
+	default:
+		return m_cache16.read_byte(address);
+	}
+}
+
 uint8_t nec_common_device::fetch()
 {
 	prefetch();
-	return m_dr8((Sreg(PS)<<4) + m_ip++);
+	return fetch_code_byte((Sreg(PS)<<4) + m_ip++);
 }
 
 uint16_t nec_common_device::fetchword()
@@ -505,7 +518,7 @@ static uint8_t parity_table[256];
 uint8_t nec_common_device::fetchop()
 {
 	prefetch();
-	return m_dr8((Sreg(PS)<<4) + m_ip++);
+	return fetch_code_byte((Sreg(PS)<<4) + m_ip++);
 }
 
 
@@ -754,18 +767,18 @@ void nec_common_device::device_start()
 	if (m_program->data_width() == 8)
 	{
 		m_program->cache(m_cache8);
-		m_dr8 = [this](offs_t address) -> u8 { return m_cache8.read_byte(address); };
+		m_fetch_path = fetch_path::BUS8;
 	}
 	else if (m_chip_type == V33_TYPE)
 	{
 		save_item(NAME(m_xa));
 		m_program->cache(m_cache16);
-		m_dr8 = [this](offs_t address) -> u8 { return m_cache16.read_byte(v33_translate(address)); };
+		m_fetch_path = fetch_path::BUS16_TRANSLATED;
 	}
 	else
 	{
 		m_program->cache(m_cache16);
-		m_dr8 = [this](offs_t address) -> u8 { return m_cache16.read_byte(address); };
+		m_fetch_path = fetch_path::BUS16;
 	}
 
 	m_io = &space(AS_IO);
