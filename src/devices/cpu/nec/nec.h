@@ -139,7 +139,7 @@ private:
 	// How opcode bytes are fetched: 8-bit bus, 16-bit bus through the V33
 	// address translation, or plain 16-bit bus.  Chosen once at start.
 	enum class fetch_path : u8 { BUS8, BUS16_TRANSLATED, BUS16 };
-	fetch_path m_fetch_path;
+	fetch_path m_fetch_path = fetch_path::BUS16;
 	inline u8 fetch_code_byte(offs_t address);
 	address_space *m_io;
 	int     m_icount;
