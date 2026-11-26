@@ -2,17 +2,16 @@ name: XML/JSON validation
 
 on:
   push:
+    branches: [master]
     paths:
     - '.github/workflows/**'
     - 'ctrlr/*'
     - 'hash/*'
     - 'plugins/**'
-  pull_request:
-    paths:
-    - '.github/workflows/**'
-    - 'ctrlr/*'
-    - 'hash/*'
-    - 'plugins/**'
+  # Not a Prophecy check: it ran twice per pull request push (push and
+  # pull_request) and tests nothing the fork changes.  Keep it for master
+  # and on demand, like the CI builds; pull requests use the no-ROM gate.
+  workflow_dispatch:
 
 permissions:
   contents: read
