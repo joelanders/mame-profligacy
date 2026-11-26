@@ -25,10 +25,17 @@ OFFICIAL_FETCH = "https://github.com/mamedev/mame.git"
 PUBLIC_HISTORY_BASE = "eb19791d0286f5de5492ac0303b776af475e2e29"
 
 ALLOWED_EXACT = {
+    # Upstream workflows trimmed to master pushes and manual runs; Prophecy
+    # pull requests use the focused no-ROM gate instead.
+    ".github/workflows/bgfxshaders.yml",
     ".github/workflows/ci-linux.yml",
     ".github/workflows/ci-macos.yml",
     ".github/workflows/ci-windows.yml",
+    ".github/workflows/docs.yml",
+    ".github/workflows/hash.yml",
+    ".github/workflows/includeguards.yml",
     ".github/workflows/korgprophecy-no-rom.yml",
+    ".github/workflows/language.yml",
     "PUBLIC_ACCEPTANCE.md",
     "PUBLIC_PROVENANCE.md",
     "scripts/src/cpu.lua",
