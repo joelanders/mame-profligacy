@@ -374,11 +374,18 @@ void h8_device::execute_run()
 	// which costs one poll that finds nothing due.  On a device whose
 	// peripherals do nothing before their event is due, polling them before
 	// the cached time changes nothing, so recompute the countdown for the new
-	// timeslice directly.
+	// timeslice directly.  A nested m_cpu->internal_update() from inside a
+	// peripheral's poll (h8_sci.cpp) has its recompute_bcount() overwritten
+	// by the outer call.  Today that can only leave the cached time early,
+	// which is safe, but it is part of the rule: an overwrite that left it
+	// late would break the skip.
 	if(m_next_event_valid && idle_entry_update_skippable() && (!m_next_event || total_cycles() < m_next_event)) {
 #if H8_CHECK_ENTRY_SKIP
 		// Poll anyway and check the rule: the event may now be later than the
 		// cached one, never earlier.  0 means no event, so it sorts last.
+		// This catches an event that moved earlier.  It cannot catch a
+		// peripheral whose poll changes state before its event is due, and
+		// the skip relies on that never happening as well.
 		const u64 cached = m_next_event;
 		internal_update(total_cycles());
 		if((m_next_event ? m_next_event : ~u64(0)) < (cached ? cached : ~u64(0)))
