@@ -357,11 +357,13 @@ void cluster_shutdown()
 {
 	if (!cluster_owner) return;
 	// Drain every queued interval so the actual clocks reach their scheduled
-	// endpoints before serial execution resumes; then join the worker.
+	// endpoints before serial execution resumes; then join the worker.  Clear
+	// the context first: the group counter drops in the group's destructor and
+	// must never reach zero while the context still points at the group.
 	try { cluster_owner->fence(); }
-	catch (...) { cluster_owner.reset(); cluster_context = nullptr; cluster_set_status(dsp_cluster_status::off); throw; }
-	cluster_owner.reset();
+	catch (...) { cluster_context = nullptr; cluster_owner.reset(); cluster_set_status(dsp_cluster_status::off); throw; }
 	cluster_context = nullptr;
+	cluster_owner.reset();
 	cluster_set_status(dsp_cluster_status::off);
 }
 
