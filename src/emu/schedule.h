@@ -17,6 +17,8 @@
 #ifndef MAME_EMU_SCHEDULE_H
 #define MAME_EMU_SCHEDULE_H
 
+#include <atomic>
+
 
 //**************************************************************************
 //  MACROS
@@ -100,17 +102,28 @@ class device_scheduler
 	friend class device_execute_interface;
 	friend class emu_timer;
 	friend void configure_dsp_cluster(device_scheduler &, std::array<device_execute_interface *, 3>);
+	friend void cluster_group_count_add(int delta) noexcept;
 
 public:
 	// construction/destruction
 	device_scheduler(running_machine &machine);
 	~device_scheduler();
 
+	// True while any DSP cluster group exists in the process.  Worker-thread
+	// state can only be set while one exists, so hot paths test this plain
+	// counter before any thread-local lookup.
+	static bool cluster_groups_alive() noexcept { return s_cluster_groups.load(std::memory_order_relaxed) != 0; }
+
 	// getters
 	running_machine &machine() const noexcept { return m_machine; }
 	attotime time() const noexcept;
 	emu_timer *first_timer() const noexcept { return m_timer_list; }
-	device_execute_interface *currently_executing() const noexcept;
+	device_execute_interface *currently_executing() const noexcept
+	{
+		// The cluster worker has its own notion of the executing device; it can
+		// only exist while this counter is nonzero.
+		return UNEXPECTED(cluster_groups_alive()) ? currently_executing_cluster() : m_executing_device;
+	}
 	bool can_save() const;
 
 	// execution
@@ -144,12 +157,17 @@ private:
 	void rebuild_execute_list();
 	void apply_suspend_changes();
 	void update_dsp_cluster(bool blocked);
+	ATTR_NOINLINE attotime time_cluster() const noexcept;
+	ATTR_NOINLINE device_execute_interface *currently_executing_cluster() const noexcept;
 	bool advance_dsp_cluster(device_execute_interface *exec, attotime &target);
 
 	// timer helpers
 	template <bool CheckIndex = false> emu_timer &timer_list_insert(emu_timer &timer);
 	emu_timer &timer_list_remove(emu_timer &timer);
 	void execute_timers();
+
+	// live DSP cluster groups in the process; only cluster_group_count_add() changes it
+	static std::atomic<int>     s_cluster_groups;
 
 	// internal state
 	running_machine &           m_machine;                  // reference to our machine

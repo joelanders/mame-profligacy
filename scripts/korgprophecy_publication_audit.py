@@ -45,6 +45,9 @@ ALLOWED_EXACT = {
     # Host-selected mixer delivery period; the default preserves MAME's cadence.
     # Also hands the sound graph to the DSP cluster when it is active.
     "src/emu/sound.cpp",
+    # ATTR_NOINLINE, so the cluster's out-of-line paths stay out of line under
+    # MSVC as well as GCC and Clang.
+    "src/osd/osdcomm.h",
     "src/osd/osdepend.h",
     "src/mame/korg/korgprophecy.cpp",
     "src/mame/mame.lst",
