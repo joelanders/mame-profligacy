@@ -4175,6 +4175,8 @@ void korgprophecy_state::prophecy(machine_config &config)
 	// space and a 16-bit external bus at reset.
 	subcpu.set_mode_a20(true);
 	subcpu.set_external_bus_timing(!std::getenv("KPROP_H8_DISABLE_NATIVE_BUS_TIMING"));
+	// Renders are bit-identical with and without the entry-poll skip.
+	subcpu.set_idle_entry_update_skip(true);
 	m_subcpu->set_addrmap(AS_PROGRAM, &korgprophecy_state::h8_map);
 	m_subcpu->read_adc<0>().set(FUNC(korgprophecy_state::h8_adc_r<0>));
 	m_subcpu->read_adc<1>().set(FUNC(korgprophecy_state::h8_adc_r<1>));

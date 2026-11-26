@@ -364,11 +364,13 @@ bool h83003_device::internal_phase_checkpointing_enabled() const
 
 bool h83003_device::idle_entry_update_skippable() const
 {
-	// The A/D converter, both SCIs and the five 16-bit timer channels return
-	// without touching their state until their event is due.  The watchdog
-	// counts lazily: its register accesses and its overflow event settle
-	// TCNT themselves, and it ignores updates that go backwards in time.
-	return true;
+	// Every peripheral here qualifies: the A/D converter, both SCIs and the
+	// five 16-bit timer channels return without touching their state until
+	// their event is due.  The watchdog counts lazily: its register accesses
+	// and its overflow event settle TCNT themselves, and it ignores updates
+	// that go backwards in time.  The skip still changes which polls happen,
+	// so it stays off unless the driver asks for it.
+	return m_idle_entry_update_skip;
 }
 
 void h83003_device::interrupt_instruction_boundary()
