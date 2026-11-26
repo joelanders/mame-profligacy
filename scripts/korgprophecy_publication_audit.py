@@ -12,11 +12,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 OFFICIAL_BASE = "a60f95ea04a4f9b4bd950c88068cce1dcdc04b6e"
 OFFICIAL_FETCH = "https://github.com/mamedev/mame.git"
-# Alpha.4 was published with GitHub's merge-commit button despite the release
-# procedure requiring a fast-forward.  Treat that already-public commit as the
-# immutable history baseline, but continue rejecting any new merge commits so
-# the mistake cannot silently repeat.
-PUBLIC_HISTORY_BASE = "b801549f45ddfffba79dd8403f592254af8a3764"
+# Alpha.4, and later pull request #12, were published with GitHub's
+# merge-commit button despite the release procedure requiring a fast-forward.
+# Treat the latest such already-public commit as the immutable history
+# baseline, but continue rejecting any new merge commits so the mistake cannot
+# silently repeat.  Merge pull requests with "Rebase and merge" or a
+# fast-forward push; the merge-commit button moves this baseline again.
+PUBLIC_HISTORY_BASE = "eb19791d0286f5de5492ac0303b776af475e2e29"
 
 ALLOWED_EXACT = {
     ".github/workflows/ci-linux.yml",
