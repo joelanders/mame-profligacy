@@ -104,7 +104,9 @@ def main() -> int:
     # A shallow CI clone that stops short of the pinned bases makes every
     # check below fail in a confusing way, so say what is actually wrong.
     for name, commit in (("official base", OFFICIAL_BASE), ("public history baseline", PUBLIC_HISTORY_BASE)):
-        if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
+        # Plain object name only: MSYS git expands braces in its arguments, so
+        # a "^{commit}" suffix never reaches it intact on the Windows runner.
+        if git("cat-file", "-e", commit, check=False).returncode:
             print(f"FAIL the pinned {name} {commit[:12]} is not in this clone; fetch more history")
             print("KORGPROPHECY_PUBLICATION_AUDIT status=FAIL snapshot=unavailable paths=0 failures=1")
             return 1
