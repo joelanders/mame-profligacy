@@ -11,8 +11,10 @@ It also checks that TCNT never counts backwards. The H8 core can present an
 update time a few cycles before the previous one, and one prescaler step back
 with TCNT at zero used to wrap into a spurious overflow.
 
-Finally it checks that a TCNT write settles the lazy counter first, so an
-overflow that is due but not yet delivered still requests its interrupt.
+Finally it checks that a TCNT write in interval mode settles the lazy counter
+first, so an overflow that is due but not yet delivered still requests its
+interrupt, and that in watchdog mode the same write replaces TCNT without
+settling, so it cannot reset the CPU from inside the write instruction.
 """
 
 from __future__ import annotations
@@ -242,8 +244,34 @@ int main()
     ok &= check(late_intc.requests == 2,
                 "overflow after a TCNT write did not request IRQ");
 
+    // In watchdog mode the same write must not settle the counter: that
+    // would reset the CPU from inside the write instruction. The write
+    // replaces TCNT, so a kick racing the overflow is accepted, and the
+    // watchdog then fires 0x100 steps after the write's step (1).
+    cpu_stub kick_cpu;
+    intc_stub kick_intc;
+    h8_watchdog_device kick(kick_cpu, kick_intc);
+    kick.wd_w(0, 0xa564);
+    kick.wd_w(0, 0x5aff);
+    kick_cpu.cycles = 0x180;
+    kick.wd_w(0, 0x5a00);
+    ok &= check(kick_cpu.resets == 0,
+                "watchdog-mode TCNT write reset the CPU from inside the write");
+    ok &= check(kick_intc.requests == 0,
+                "watchdog-mode TCNT write requested an interval IRQ");
+    ok &= check((kick.m_tcsr & 0x80) == 0, "watchdog-mode TCNT write set OVF");
+    ok &= check(kick.m_tcnt == 0, "watchdog-mode TCNT write did not set TCNT");
+    ok &= check(kick.m_tcnt_cycle_base == 0x180,
+                "watchdog-mode TCNT write did not restart counting at the write");
+    kick.tcnt_update(0x100ff);
+    ok &= check(kick_cpu.resets == 0, "watchdog reset after a kick arrived early");
+    kick.tcnt_update(0x10100);
+    ok &= check(kick_cpu.resets == 1, "watchdog did not reset the CPU after a kick");
+    ok &= check(kick_intc.requests == 0 && (kick.m_tcsr & 0x80) == 0,
+                "watchdog-mode overflow raised OVF or an interval IRQ");
+
     if (ok)
-        std::puts("PASS: H8 watchdog OVF clearing, repeated interval IRQs, monotonic counting and settled TCNT writes");
+        std::puts("PASS: H8 watchdog OVF clearing, repeated interval IRQs, monotonic counting, settled TCNT writes and watchdog-mode kicks");
     return ok ? 0 : 1;
 }}
 """

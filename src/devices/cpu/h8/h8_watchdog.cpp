@@ -124,10 +124,20 @@ void h8_watchdog_device::wd_w(offs_t offset, u16 data, u16 mem_mask)
 
 	if((data & 0xff00) == 0x5a00) {
 		if(m_tcsr & TCSR_TME) {
-			// TCNT counts lazily.  Settle it at the current time first, so an
-			// overflow that is due but not yet delivered still happens before
-			// the write replaces the count and the base time.
-			tcnt_update();
+			// TCNT counts lazily.  In interval mode, settle it at the current
+			// time first, so an overflow that is due but not yet delivered
+			// still happens before the write replaces the count and the base
+			// time.  total_cycles() already includes the write's bus cycle, so
+			// this also counts a prescaler step in the write's last state (T3),
+			// which loses to the write on hardware; only TCNT=FF with a step in
+			// that state differs.
+			// In watchdog mode, settling could call m_cpu->reset() from inside
+			// the write instruction: the peripherals would reset, and then
+			// prefetch_done() would overwrite the CPU's reset state.  So the
+			// write replaces TCNT unsettled there, and a kick racing the
+			// overflow is accepted.
+			if(!(m_tcsr & TCSR_WT))
+				tcnt_update();
 			m_tcnt = data & 0xff;
 			m_tcnt_cycle_base = m_cpu->total_cycles();
 			//logerror("%10lld tcnt = %02x\n", m_tcnt_cycle_base, m_tcnt);

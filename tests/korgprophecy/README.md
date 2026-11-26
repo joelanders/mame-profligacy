@@ -157,10 +157,12 @@ manual: OVF clears only after a read-one/write-zero sequence, while every TCNT
 overflow requests an interrupt even if OVF was already set. It also checks that
 an update presented with a time before the previous one leaves TCNT unchanged:
 the H8 core can present such times, and one prescaler step back with TCNT at
-zero used to wrap into a spurious overflow. A TCNT write must settle the lazy
-counter before replacing it, so an overflow that is due but not yet delivered
-still requests its interrupt. It extracts and executes the production watchdog
-methods without ROM data.
+zero used to wrap into a spurious overflow. In interval mode a TCNT write must
+settle the lazy counter before replacing it, so an overflow that is due but not
+yet delivered still requests its interrupt. In watchdog mode the write replaces
+TCNT without settling, so it cannot reset the CPU from inside the write
+instruction and raises neither OVF nor the interval interrupt. It extracts and
+executes the production watchdog methods without ROM data.
 
 ## TMS57002 native EMPTY and update occupancy
 
