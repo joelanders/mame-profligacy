@@ -26,6 +26,17 @@
 #include "h8_port.h"
 #include "h8d.h"
 
+// Debug builds check the timeslice-entry poll skip in execute_run(): the skip
+// path still runs the full poll and verifies the rule the skip relies on.
+// Release builds take the skip without the check.
+#ifndef H8_CHECK_ENTRY_SKIP
+#ifdef MAME_DEBUG
+#define H8_CHECK_ENTRY_SKIP 1
+#else
+#define H8_CHECK_ENTRY_SKIP 0
+#endif
+#endif
+
 h8_device::h8_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor map_delegate) :
 	h8_cpu_base(mconfig, type, tag, owner, clock),
 	device_nvram_interface(mconfig, *this),
@@ -355,14 +366,27 @@ void h8_device::recompute_bcount(u64 event_time)
 
 void h8_device::execute_run()
 {
-	// Every peripheral was polled when m_next_event was recorded, and each
-	// change to a peripheral's schedule since then came through a full
-	// update.  On a device whose peripherals do nothing before their event
-	// is due, polling them again before that time only recomputes the same
-	// event, so recompute the countdown for the new timeslice directly.
-	if(m_next_event_valid && idle_entry_update_skippable() && (!m_next_event || total_cycles() < m_next_event))
+	// m_next_event is the earliest peripheral event found by the last full
+	// update.  No event moves earlier without another full update: whatever
+	// adds an event or brings one forward calls internal_update().  An event
+	// can move later without one (a 16-bit timer channel stopped through
+	// TSTR, the notify_standby(0) handlers); the cached time is then early,
+	// which costs one poll that finds nothing due.  On a device whose
+	// peripherals do nothing before their event is due, polling them before
+	// the cached time changes nothing, so recompute the countdown for the new
+	// timeslice directly.
+	if(m_next_event_valid && idle_entry_update_skippable() && (!m_next_event || total_cycles() < m_next_event)) {
+#if H8_CHECK_ENTRY_SKIP
+		// Poll anyway and check the rule: the event may now be later than the
+		// cached one, never earlier.  0 means no event, so it sorts last.
+		const u64 cached = m_next_event;
+		internal_update(total_cycles());
+		if((m_next_event ? m_next_event : ~u64(0)) < (cached ? cached : ~u64(0)))
+			fatalerror("%s: peripheral event at cycle %d is before the cached %d; it moved earlier without a full update\n", tag(), m_next_event, cached);
+#else
 		recompute_bcount(m_next_event);
-	else
+#endif
+	} else
 		internal_update(total_cycles());
 
 	m_icount -= m_count_before_instruction_step;
