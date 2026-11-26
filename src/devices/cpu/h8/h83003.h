@@ -54,6 +54,10 @@ public:
 	void set_mode_a20(bool initial_bus_16bit = false) { m_mode_a20 = true; m_initial_bus_16bit = initial_bus_16bit; }
 	void set_mode_a24(bool initial_bus_16bit = false) { m_mode_a20 = false; m_initial_bus_16bit = initial_bus_16bit; }
 	void set_external_bus_timing(bool enable) { m_external_bus_timing = enable; }
+	// Skip the timeslice-entry peripheral poll while no peripheral event is
+	// due (see h8_device::execute_run()).  Off by default: a driver turns it
+	// on once its output has been compared with and without it.
+	void set_idle_entry_update_skip(bool enable) { m_idle_entry_update_skip = enable; }
 
 	u8 syscr_r();
 	void syscr_w(u8 data);
@@ -109,6 +113,7 @@ protected:
 	u8 m_brcr;
 	bool m_initial_bus_16bit = false;
 	bool m_external_bus_timing = false;
+	bool m_idle_entry_update_skip = false;
 
 	virtual void update_irq_filter() override;
 	virtual void interrupt_taken() override;
