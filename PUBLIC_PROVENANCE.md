@@ -107,4 +107,8 @@ python3 scripts/korgprophecy_publication_audit.py --cached
 
 The audit verifies the official ancestry boundary, local/remote topology,
 allowlisted delta paths, absence of forbidden asset extensions and private
-path markers, and the absence of merge commits above the official base.
+path markers, and the absence of merge commits above the public history
+baseline.  Pull request CI gives the target branch's commit as `--pr-base`
+(through `KORGPROPHECY_AUDIT_PR_BASE`), so only the commits the pull request
+adds are checked for merge commits; pushes to the publication branch check the
+whole history above the baseline.
