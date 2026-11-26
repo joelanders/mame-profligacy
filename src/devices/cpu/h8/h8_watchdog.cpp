@@ -124,6 +124,10 @@ void h8_watchdog_device::wd_w(offs_t offset, u16 data, u16 mem_mask)
 
 	if((data & 0xff00) == 0x5a00) {
 		if(m_tcsr & TCSR_TME) {
+			// TCNT counts lazily.  Settle it at the current time first, so an
+			// overflow that is due but not yet delivered still happens before
+			// the write replaces the count and the base time.
+			tcnt_update();
 			m_tcnt = data & 0xff;
 			m_tcnt_cycle_base = m_cpu->total_cycles();
 			//logerror("%10lld tcnt = %02x\n", m_tcnt_cycle_base, m_tcnt);

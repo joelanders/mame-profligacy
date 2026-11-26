@@ -10,6 +10,9 @@ methods into a small type-compatible C++ harness and checks both rules.
 It also checks that TCNT never counts backwards. The H8 core can present an
 update time a few cycles before the previous one, and one prescaler step back
 with TCNT at zero used to wrap into a spurious overflow.
+
+Finally it checks that a TCNT write settles the lazy counter first, so an
+overflow that is due but not yet delivered still requests its interrupt.
 """
 
 from __future__ import annotations
@@ -216,8 +219,31 @@ int main()
     ok &= check(rearm_intc.requests == 1,
                 "overflow after an ignored update did not request IRQ");
 
+    // TCNT counts lazily, so an overflow can be due without having been
+    // delivered yet. A TCNT write at that point must settle the counter
+    // first: the overflow at cycle 0x100 still happens, and the new count
+    // starts from the write.
+    cpu_stub late_cpu;
+    intc_stub late_intc;
+    h8_watchdog_device late(late_cpu, late_intc);
+    late.wd_w(0, 0xa53c);
+    late.wd_w(0, 0x5aff);
+    late_cpu.cycles = 0x180;
+    late.wd_w(0, 0x5a00);
+    ok &= check(late_intc.requests == 1,
+                "TCNT write dropped an overflow that was already due");
+    ok &= check((late.m_tcsr & 0x80) != 0,
+                "TCNT write dropped the OVF of an overflow that was already due");
+    ok &= check(late.m_tcnt == 0, "TCNT write did not set TCNT");
+    // The next overflow counts 0x100 steps from the write's step (1).
+    late.tcnt_update(0x100ff);
+    ok &= check(late_intc.requests == 1, "overflow after a TCNT write arrived early");
+    late.tcnt_update(0x10100);
+    ok &= check(late_intc.requests == 2,
+                "overflow after a TCNT write did not request IRQ");
+
     if (ok)
-        std::puts("PASS: H8 watchdog OVF clearing, repeated interval IRQs and monotonic counting");
+        std::puts("PASS: H8 watchdog OVF clearing, repeated interval IRQs, monotonic counting and settled TCNT writes");
     return ok ? 0 : 1;
 }}
 """
