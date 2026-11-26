@@ -35,6 +35,12 @@
 // touched only by the worker, or after an explicit drain while it is idle.
 std::atomic<int> device_scheduler::s_cluster_groups{0};
 
+// Called only by a cluster group's constructor (+1) and destructor (-1).
+void cluster_group_count_add(int delta) noexcept
+{
+	device_scheduler::s_cluster_groups.fetch_add(delta, std::memory_order_relaxed);
+}
+
 namespace {
 std::atomic<bool> g_cluster_requested{false};
 std::atomic<u64> g_cluster_generation{0};
@@ -127,7 +133,7 @@ struct cluster_group
 
 	explicit cluster_group(device_scheduler &s) : scheduler(s)
 	{
-		device_scheduler::s_cluster_groups.fetch_add(1, std::memory_order_relaxed);
+		cluster_group_count_add(1);
 		capture_policy();
 	}
 	~cluster_group()
@@ -135,7 +141,7 @@ struct cluster_group
 		stopping.store(true, std::memory_order_release);
 		requested.publish(written + 1);
 		if (thread.joinable()) thread.join();
-		device_scheduler::s_cluster_groups.fetch_sub(1, std::memory_order_relaxed);
+		cluster_group_count_add(-1);
 	}
 	// The worker inherits the coordinator's real-time scheduling policy, so a
 	// real-time producer never waits on an ordinary-priority DSP thread.
@@ -280,7 +286,7 @@ struct cluster_group
 // Thread-local reads stay in functions that are never inlined into a caller
 // that tests the group counter first.  Otherwise the compiler computes the
 // thread-local address before the test and the lookup stays on the hot path.
-inline bool cluster_possible() { return UNEXPECTED(device_scheduler::s_cluster_groups.load(std::memory_order_relaxed) != 0); }
+inline bool cluster_possible() { return UNEXPECTED(device_scheduler::cluster_groups_alive()); }
 ATTR_NOINLINE bool cluster_worker_thread_slow() { return cluster_in_consumer; }
 inline bool cluster_worker_thread() { return cluster_possible() && cluster_worker_thread_slow(); }
 

@@ -10,14 +10,14 @@
 
 #pragma once
 
-#include <atomic>
-
 #ifndef __EMU_H__
 #error Dont include this file directly; include emu.h instead.
 #endif
 
 #ifndef MAME_EMU_SCHEDULE_H
 #define MAME_EMU_SCHEDULE_H
+
+#include <atomic>
 
 
 //**************************************************************************
@@ -102,16 +102,17 @@ class device_scheduler
 	friend class device_execute_interface;
 	friend class emu_timer;
 	friend void configure_dsp_cluster(device_scheduler &, std::array<device_execute_interface *, 3>);
+	friend void cluster_group_count_add(int delta) noexcept;
 
 public:
 	// construction/destruction
 	device_scheduler(running_machine &machine);
 	~device_scheduler();
 
-	// Number of live DSP cluster groups in the process.  Worker-thread state
-	// can only be set while one exists, so hot paths test this plain counter
-	// before any thread-local lookup.
-	static std::atomic<int> s_cluster_groups;
+	// True while any DSP cluster group exists in the process.  Worker-thread
+	// state can only be set while one exists, so hot paths test this plain
+	// counter before any thread-local lookup.
+	static bool cluster_groups_alive() noexcept { return s_cluster_groups.load(std::memory_order_relaxed) != 0; }
 
 	// getters
 	running_machine &machine() const noexcept { return m_machine; }
@@ -121,7 +122,7 @@ public:
 	{
 		// The cluster worker has its own notion of the executing device; it can
 		// only exist while this counter is nonzero.
-		return UNEXPECTED(s_cluster_groups.load(std::memory_order_relaxed) != 0) ? currently_executing_cluster() : m_executing_device;
+		return UNEXPECTED(cluster_groups_alive()) ? currently_executing_cluster() : m_executing_device;
 	}
 	bool can_save() const;
 
@@ -164,6 +165,9 @@ private:
 	template <bool CheckIndex = false> emu_timer &timer_list_insert(emu_timer &timer);
 	emu_timer &timer_list_remove(emu_timer &timer);
 	void execute_timers();
+
+	// live DSP cluster groups in the process; only cluster_group_count_add() changes it
+	static std::atomic<int>     s_cluster_groups;
 
 	// internal state
 	running_machine &           m_machine;                  // reference to our machine
