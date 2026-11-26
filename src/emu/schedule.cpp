@@ -281,12 +281,12 @@ struct cluster_group
 // that tests the group counter first.  Otherwise the compiler computes the
 // thread-local address before the test and the lookup stays on the hot path.
 inline bool cluster_possible() { return UNEXPECTED(device_scheduler::s_cluster_groups.load(std::memory_order_relaxed) != 0); }
-[[gnu::noinline]] bool cluster_worker_thread_slow() { return cluster_in_consumer; }
+ATTR_NOINLINE bool cluster_worker_thread_slow() { return cluster_in_consumer; }
 inline bool cluster_worker_thread() { return cluster_possible() && cluster_worker_thread_slow(); }
 
 thread_local std::unique_ptr<cluster_group> cluster_owner;
 thread_local u64 cluster_failed_generation = ~u64(0);
-[[gnu::noinline]] bool cluster_owner_present_slow() { return bool(cluster_owner); }
+ATTR_NOINLINE bool cluster_owner_present_slow() { return bool(cluster_owner); }
 
 // Checked every timeslice; write only on change, so polling it stays cheap.
 void cluster_set_status(dsp_cluster_status status)
@@ -299,7 +299,7 @@ void cluster_set_status(dsp_cluster_status status)
 
 bool cluster_consumer() { return cluster_worker_thread(); }
 
-[[gnu::noinline]] static bool cluster_post_slow(device_scheduler &scheduler, void *object, cluster_callback callback, u64 first, u64 second)
+ATTR_NOINLINE static bool cluster_post_slow(device_scheduler &scheduler, void *object, cluster_callback callback, u64 first, u64 second)
 {
 	if (!cluster_context || cluster_in_consumer) return false;
 	auto &group = *cluster_context;
@@ -320,7 +320,7 @@ bool cluster_post(device_scheduler &scheduler, void *object, cluster_callback ca
 	return cluster_possible() && cluster_post_slow(scheduler, object, callback, first, second);
 }
 
-[[gnu::noinline]] static void cluster_fence_slow()
+ATTR_NOINLINE static void cluster_fence_slow()
 {
 	if (cluster_context && !cluster_in_consumer) cluster_context->fence();
 }
@@ -330,7 +330,7 @@ void cluster_fence()
 	if (cluster_possible()) cluster_fence_slow();
 }
 
-[[gnu::noinline]] static void cluster_audio_boundary_slow(const device_t &device)
+ATTR_NOINLINE static void cluster_audio_boundary_slow(const device_t &device)
 {
 	if (!cluster_context || cluster_in_consumer) return;
 	auto &group = *cluster_context;
@@ -727,7 +727,7 @@ attotime device_scheduler::time() const noexcept
 	return (m_executing_device != nullptr) ? m_executing_device->local_time() : m_basetime;
 }
 
-[[gnu::noinline]] attotime device_scheduler::time_cluster() const noexcept
+attotime device_scheduler::time_cluster() const noexcept
 {
 	// Worker callbacks see the captured event time, or their own chip's clock.
 	if (cluster_in_consumer)
@@ -739,7 +739,7 @@ attotime device_scheduler::time() const noexcept
 	return (m_executing_device != nullptr) ? m_executing_device->local_time() : m_basetime;
 }
 
-[[gnu::noinline]] device_execute_interface *device_scheduler::currently_executing_cluster() const noexcept
+device_execute_interface *device_scheduler::currently_executing_cluster() const noexcept
 {
 	return cluster_in_consumer ? cluster_device : m_executing_device;
 }

@@ -156,8 +156,8 @@ private:
 	void rebuild_execute_list();
 	void apply_suspend_changes();
 	void update_dsp_cluster(bool blocked);
-	attotime time_cluster() const noexcept;
-	device_execute_interface *currently_executing_cluster() const noexcept;
+	ATTR_NOINLINE attotime time_cluster() const noexcept;
+	ATTR_NOINLINE device_execute_interface *currently_executing_cluster() const noexcept;
 	bool advance_dsp_cluster(device_execute_interface *exec, attotime &target);
 
 	// timer helpers

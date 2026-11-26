@@ -37,6 +37,7 @@
 #define ATTR_FORCE_INLINE       __attribute__((always_inline))
 #define ATTR_HOT                __attribute__((hot))
 #define ATTR_COLD               __attribute__((cold))
+#define ATTR_NOINLINE           __attribute__((noinline))
 #define UNEXPECTED(exp)         __builtin_expect(!!(exp), 0)
 #define EXPECTED(exp)           __builtin_expect(!!(exp), 1)
 #define RESTRICT                __restrict__
@@ -46,6 +47,7 @@
 #define ATTR_FORCE_INLINE       __forceinline
 #define ATTR_HOT
 #define ATTR_COLD
+#define ATTR_NOINLINE           __declspec(noinline)
 #define UNEXPECTED(exp)         (exp)
 #define EXPECTED(exp)           (exp)
 #define RESTRICT
