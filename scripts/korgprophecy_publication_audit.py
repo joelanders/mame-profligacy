@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -18,6 +19,9 @@ OFFICIAL_FETCH = "https://github.com/mamedev/mame.git"
 # baseline, but continue rejecting any new merge commits so the mistake cannot
 # silently repeat.  Merge pull requests with "Rebase and merge" or a
 # fast-forward push; the merge-commit button moves this baseline again.
+# With --pr-base (pull request CI) only the commits the pull request adds are
+# checked, so a merge commit on the target branch fails the push run there
+# rather than every open pull request.
 PUBLIC_HISTORY_BASE = "eb19791d0286f5de5492ac0303b776af475e2e29"
 
 ALLOWED_EXACT = {
@@ -99,6 +103,17 @@ def main() -> int:
         "--content-only", action="store_true",
         help="skip local branch/remote topology checks (for detached CI clones)",
     )
+    parser.add_argument(
+        "--pr-base", metavar="COMMIT",
+        default=os.environ.get("KORGPROPHECY_AUDIT_PR_BASE") or None,
+        help=(
+            "check only the commits a pull request adds (those above its merge "
+            "base with COMMIT) for merge commits; a merge commit already on the "
+            "target branch is reported by the push run there, not by every open "
+            "pull request.  CI sets it through KORGPROPHECY_AUDIT_PR_BASE, which "
+            "older copies of this script ignore"
+        ),
+    )
     args = parser.parse_args()
 
     # A shallow CI clone that stops short of the pinned bases makes every
@@ -123,9 +138,28 @@ def main() -> int:
     if text("merge-base", PUBLIC_HISTORY_BASE, "HEAD") != PUBLIC_HISTORY_BASE:
         failures.append("HEAD does not descend from the current public history baseline")
 
-    merge_commits = text("rev-list", "--merges", f"{PUBLIC_HISTORY_BASE}..HEAD")
-    if merge_commits:
-        failures.append("new merge commits exist above the public history baseline")
+    if args.pr_base:
+        if git("cat-file", "-e", args.pr_base, check=False).returncode:
+            failures.append(f"the pull request base {args.pr_base[:12]} is not in this clone")
+            added_from = None
+        else:
+            added_from = text("merge-base", args.pr_base, "HEAD", check=False)
+            if not added_from:
+                failures.append(f"HEAD shares no history with the pull request base {args.pr_base[:12]}")
+        if added_from:
+            merge_commits = text("rev-list", "--merges", f"{added_from}..HEAD")
+            if merge_commits:
+                failures.append(
+                    "the pull request adds merge commits (rebase it instead): "
+                    + ", ".join(commit[:12] for commit in merge_commits.split())
+                )
+    else:
+        merge_commits = text("rev-list", "--merges", f"{PUBLIC_HISTORY_BASE}..HEAD")
+        if merge_commits:
+            failures.append(
+                "new merge commits exist above the public history baseline: "
+                + ", ".join(commit[:12] for commit in merge_commits.split())
+            )
 
     if not args.content_only:
         heads = set(text("for-each-ref", "--format=%(refname:short)", "refs/heads").splitlines())

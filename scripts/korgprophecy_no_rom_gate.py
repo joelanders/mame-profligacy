@@ -68,12 +68,20 @@ def main() -> int:
         "--content-only", action="store_true",
         help="skip local Git topology checks in detached CI clones",
     )
+    parser.add_argument(
+        "--skip-publication-audit", action="store_true",
+        help=(
+            "leave the publication audit to a separate CI job, so a history "
+            "finding does not hide whether the tests pass"
+        ),
+    )
     args = parser.parse_args()
 
-    audit = [sys.executable, "scripts/korgprophecy_publication_audit.py"]
-    if args.content_only:
-        audit.append("--content-only")
-    run(audit)
+    if not args.skip_publication_audit:
+        audit = [sys.executable, "scripts/korgprophecy_publication_audit.py"]
+        if args.content_only:
+            audit.append("--content-only")
+        run(audit)
     run([sys.executable, "scripts/korgprophecy_control_audit.py"])
     run([sys.executable, "scripts/korgprophecy_corpus_policy.py"])
     run([sys.executable, "tests/korgprophecy/v55_uart_brg_timing_test.py"])

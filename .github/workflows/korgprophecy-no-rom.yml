@@ -2,7 +2,10 @@ name: Korg Prophecy no-ROM gates
 
 on:
   push:
-    branches: [master]
+    # A push run audits the whole history above the public baseline, so a
+    # merge commit landing on the publication branch is reported there at once
+    # instead of in every open pull request.
+    branches: [profligacy-public-v1]
   pull_request:
   workflow_dispatch:
 
@@ -14,6 +17,31 @@ permissions:
   contents: read
 
 jobs:
+  # The publication audit takes seconds and needs no build.  It runs on its own
+  # so that a history finding neither waits for nor hides the test results.
+  publication-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Every commit without old trees or files (about 30 MB): the pinned
+          # official base and public history baseline are always present,
+          # however far the branch has moved past them.
+          fetch-depth: 0
+          filter: tree:0
+          # The audit reads the proposed branch tip, not GitHub's synthetic
+          # merge commit; on push this is github.sha.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Audit the publishable delta and history
+        env:
+          # Set on pull requests only: there the audit checks just the commits
+          # the pull request adds for merge commits.  An environment variable
+          # rather than a flag, because the script comes from the pull request
+          # and a branch from before this change has a copy without the flag.
+          KORGPROPHECY_AUDIT_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/korgprophecy_publication_audit.py --content-only
+
   no-rom-unix:
     name: no-rom-${{ matrix.name }}
     strategy:
@@ -27,18 +55,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
+      # The tests need no history.  On a pull request they build GitHub's
+      # merge of the branch into its target, so they report on what merging
+      # would produce without the branch being rebased first.
       - uses: actions/checkout@v6
-        with:
-          # Include the pinned upstream and public-history bases required by
-          # the topology audit without cloning MAME's complete history.  The
-          # depth must exceed the number of commits between the branch tip and
-          # the pinned official base (25 on the publication branch when this
-          # was written); the audit says so plainly when it no longer does.
-          fetch-depth: 64
-          # The publication audit requires the linear public history. GitHub's
-          # pull_request default is a synthetic merge commit, so validate the
-          # proposed branch tip explicitly while retaining github.sha on push.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libfontconfig-dev libasound2-dev libxinerama-dev libxi-dev
@@ -48,7 +68,7 @@ jobs:
       - name: Build and run public gates
         env:
           JOBS: 4
-        run: ./scripts/korgprophecy_no_rom_gate.sh --content-only
+        run: ./scripts/korgprophecy_no_rom_gate.sh --content-only --skip-publication-audit
 
   no-rom-windows:
     runs-on: windows-latest
@@ -62,9 +82,6 @@ jobs:
           msystem: UCRT64
           install: git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-x86_64-libc++ mingw-w64-ucrt-x86_64-sdl3
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 64
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Build and run public gates
         env:
           ARCHOPTS: "-fuse-ld=lld"
@@ -75,4 +92,4 @@ jobs:
           OVERRIDE_CXX: g++
           PYTHON: python
           USE_SDL3: 1
-        run: ./scripts/korgprophecy_no_rom_gate.sh --content-only
+        run: ./scripts/korgprophecy_no_rom_gate.sh --content-only --skip-publication-audit
