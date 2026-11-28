@@ -2,6 +2,7 @@ name: CI (macOS)
 
 on:
   push:
+    branches: [master]
     paths:
     - '.github/workflows/**'
     - '3rdparty/**'
@@ -9,14 +10,14 @@ on:
     - 'src/**'
     - 'COPYING'
     - 'makefile'
-  pull_request:
-    paths:
-    - '.github/workflows/**'
-    - '3rdparty/**'
-    - 'scripts/**'
-    - 'src/**'
-    - 'COPYING'
-    - 'makefile'
+  # Prophecy PRs use the focused cross-platform no-ROM gate, and product
+  # releases build their own pinned propmin SDK.  Keep this full upstream-style
+  # build available on demand and for master.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -31,6 +31,8 @@ public:
 	void set_input(int inputnum, int state);
 	void set_filter(int icr_filter, int ipr_filter);
 	void set_nmi_edge(int state) { m_nmi_type = state ? EDGE_RISE : EDGE_FALL; }
+	void set_instruction_boundary_clear(bool enable) { m_instruction_boundary_clear = enable; }
+	void instruction_boundary();
 
 	u8 ier_r();
 	void ier_w(u8 data);
@@ -62,6 +64,8 @@ protected:
 	u8 m_isr;
 	u16 m_iscr;
 	int m_icr_filter, m_ipr_filter;
+	bool m_instruction_boundary_clear;
+	u8 m_boundary_ier, m_boundary_isr;
 
 	h8_intc_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
 

@@ -30,7 +30,8 @@ h8_intc_device::h8_intc_device(const machine_config &mconfig, const char *tag, d
 
 h8_intc_device::h8_intc_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock) :
 	h8_intc_base(mconfig, type, tag, owner, clock), m_irq_vector_base(0), m_irq_vector_count(0), m_irq_vector_nmi(0), m_has_isr(false),
-	m_cpu(*this, finder_base::DUMMY_TAG), m_nmi_type(EDGE_FALL), m_nmi_input(false), m_irq_input(0), m_ier(0), m_isr(0), m_iscr(0), m_icr_filter(0), m_ipr_filter(0)
+	m_cpu(*this, finder_base::DUMMY_TAG), m_nmi_type(EDGE_FALL), m_nmi_input(false), m_irq_input(0), m_ier(0), m_isr(0), m_iscr(0), m_icr_filter(0), m_ipr_filter(0),
+	m_instruction_boundary_clear(false), m_boundary_ier(0), m_boundary_isr(0)
 {
 }
 
@@ -47,6 +48,8 @@ void h8_intc_device::device_start()
 	save_item(NAME(m_iscr));
 	save_item(NAME(m_icr_filter));
 	save_item(NAME(m_ipr_filter));
+	save_item(NAME(m_boundary_ier));
+	save_item(NAME(m_boundary_isr));
 }
 
 void h8_intc_device::device_reset()
@@ -56,6 +59,7 @@ void h8_intc_device::device_reset()
 	memset(m_pending_irqs, 0, sizeof(m_pending_irqs));
 	m_iscr = 0x0000;
 	m_ier = m_isr = 0x00;
+	m_boundary_ier = m_boundary_isr = 0x00;
 	check_level_irqs(false);
 }
 
@@ -142,9 +146,19 @@ u8 h8_intc_device::ier_r()
 
 void h8_intc_device::ier_w(u8 data)
 {
+	if(m_instruction_boundary_clear && !m_cpu->access_is_dma())
+		m_boundary_ier |= m_ier & ~data;
 	m_ier = data;
 	//  logerror("ier = %02x\n", data);
 	update_irq_state();
+}
+
+void h8_intc_device::instruction_boundary()
+{
+	if(m_boundary_ier || m_boundary_isr) {
+		m_boundary_ier = m_boundary_isr = 0;
+		update_irq_state();
+	}
 }
 
 void h8_intc_device::check_level_irqs(bool update)
@@ -196,7 +210,9 @@ void h8_intc_device::update_irq_state()
 		const u32 mask = (1 << m_irq_vector_count) - 1;
 
 		m_pending_irqs[0] &= ~(mask << m_irq_vector_base);
-		m_pending_irqs[0] |= (m_isr & m_ier & mask) << m_irq_vector_base;
+		const u8 effective_isr = m_isr | m_boundary_isr;
+		const u8 effective_ier = m_ier | m_boundary_ier;
+		m_pending_irqs[0] |= (effective_isr & effective_ier & mask) << m_irq_vector_base;
 	}
 
 	int cur_vector = 0;
@@ -296,6 +312,8 @@ u8 h8h_intc_device::isr_r()
 
 void h8h_intc_device::isr_w(u8 data)
 {
+	if(m_instruction_boundary_clear && !m_cpu->access_is_dma())
+		m_boundary_isr |= m_isr & ~data;
 	m_isr &= data; // edge/level
 	//logerror("isr = %02x / %02x\n", data, m_isr);
 	check_level_irqs(false);
@@ -309,8 +327,10 @@ u8 h8h_intc_device::icr_r(offs_t offset)
 
 void h8h_intc_device::icr_w(offs_t offset, u8 data)
 {
-	m_icr = (m_icr & (0xff << (8*offset))) | (data << (8*offset));
+	const unsigned shift = 8 * offset;
+	m_icr = (m_icr & ~(u32(0xff) << shift)) | (u32(data) << shift);
 	logerror("icr %d = %02x\n", offset, data);
+	update_irq_state();
 }
 
 const int h8h_intc_device::vector_to_slot[64] = {

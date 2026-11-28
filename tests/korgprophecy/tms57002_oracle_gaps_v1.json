@@ -1,0 +1,2522 @@
+{
+  "schema": "tms57002-hardware-oracle-gap-ledger-v1",
+  "suite_id": "hardware-oracle-replays-v1",
+  "claim": "These 46 historical decoded captures are retained with their original mismatch evidence, but their recipes underdeclared serial protocol, retained arithmetic, or output-latch state. They are not current emulator failures and are outside the public release denominator.",
+  "measured_against": "korgprophecy-dsp-dynarec",
+  "summary": {
+    "decoded_captures": 600,
+    "promoted_exact": 554,
+    "legacy_superseded": 42,
+    "recapture_optional": 4,
+    "release_blocking": 0
+  },
+  "cases": [
+    {
+      "hardware_run": "20260529-173343-mpy-latency-0",
+      "test_name": "mpy-latency-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 100,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 42,
+              "mame": 0
+            },
+            {
+              "word": 4,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 6,
+              "hardware": 179590,
+              "mame": 3262158
+            },
+            {
+              "word": 8,
+              "hardware": 179590,
+              "mame": 4539000
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "fc0769bab2e7fddb23d9c82d7f587dae8f825a1a7441c2dab38c2ac58c1be2d0"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "4980ca12b226918e4568d88039121c39c70aad3c5d736c09cc59cf220581778f"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-173349-mpy-latency-1",
+      "test_name": "mpy-latency-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 97,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2359295,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 179590
+            },
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "608017ab5a82f7427efe7d90d4a01c27e380ed87976d69643ed0ff5d9be2908e"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "86667436a4ea8539d7fd41eeac7a16305bec1c6011dc4614866e9e41b5c3c4b7"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-173356-mpy-latency-2",
+      "test_name": "mpy-latency-2",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 97,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2359295,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 179590
+            },
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "d1ade6d87f92b0d8c1c054a90eb328b43144fd4f8dfca45e8a4c31dd2445b415"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "8e73bb4001176bfba47dba1de030a307d9c979e5db7f9c6404576a500f1f9c86"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-173402-mpy-latency-3",
+      "test_name": "mpy-latency-3",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 97,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2359295,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 179590
+            },
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "8fb342c7fef12c82958c824ab5e4814fabb9f3b5413472d1b3556a038bd3cfed"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "efdc516359e5ae951ead6ce89605fd1059b1c33911345497cf4e7d6467d8ce7e"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-180201-mpy-latency-0",
+      "test_name": "mpy-latency-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 100,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 853,
+              "mame": 0
+            },
+            {
+              "word": 4,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 6,
+              "hardware": 0,
+              "mame": 3262158
+            },
+            {
+              "word": 8,
+              "hardware": 179590,
+              "mame": 4539000
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "d3f6096741654ad44078c9a752e0b97f5e793493206e2f25ae837bb220ecc1c9"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "6b3cc6897d09f3f29a8f7ef38525a71b883ff3df50fc7c7e81b8b1048e5004d8"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-180207-mpy-latency-1",
+      "test_name": "mpy-latency-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 97,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2359295,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 179590
+            },
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "ca920dbcc1dcab871128e9c010c6c79362c95094a72d4ac5092cf494cce935cf"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "9ec133c7b30b163d1d9f6877d6387efaef4f853ae7b6ae5339b9431a67a498d1"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-180214-mpy-latency-2",
+      "test_name": "mpy-latency-2",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 97,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2359295,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 179590
+            },
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "97d0ca7a799751a687b8d6a4eb4bdf73a3d971bef9e925b2ab4fa6c0266de5f9"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "d59db18aa91f2463e17c213ca831dadbde576edf19e789374d0c5ce4ae2c7ffa"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-180220-mpy-latency-3",
+      "test_name": "mpy-latency-3",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 97,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2359295,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 179590
+            },
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "8fffb726a2f00bfb74e0ef087060b4d48503352d2b48d5af25b192ba5c4f19c3"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "aa52cd91a069c7999b7ee30a23be49e060629c723f0c30236a23457db07b6616"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-180226-mpy-to-smhd-0",
+      "test_name": "mpy-to-smhd-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 245,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 1456432,
+              "mame": 0
+            },
+            {
+              "word": 4,
+              "hardware": 1456432,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "985d8eedbee8f897f13dd45b78f8358240f88c92491e9a86a4e3e3db7ed56f38"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "562414f1c62a74ce144dedf705c9258f8a243aa42e7b63c9c6c83ff89f7e62b7"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smhd_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180232-mpy-to-smhd-1",
+      "test_name": "mpy-to-smhd-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 433,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 15320783,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 14923528,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 15320783,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "1acdeb3a17413868594c8cf68e594194649ce95bc1abcd58e3932e1fedec3714"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "e5edfd3145e48567bb104020e1032358ebaeffe12d4dfde059f6560646a27878"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smhd_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180238-mpy-to-smhd-2",
+      "test_name": "mpy-to-smhd-2",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 438,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 15320783,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 14923528,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 15320783,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "11f530e53bd56425862a399983e04a59caf6950051301af81c609ce93ec03472"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "8dbaeec3be963898dd5474ec2584d83fa8b934df776876def21228d0c3b3cea6"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smhd_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180245-mpy-to-smhd-3",
+      "test_name": "mpy-to-smhd-3",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 438,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 15320783,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 14923528,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 15320783,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "959c3aedf9719c7b9c475443f490cfaf3ad3821e2e63e40d1c7a76de2e5db5e6"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "8eb0a9021a6e5b39570bfbc161566680096359677a9bb3c323744d7e6b581a46"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smhd_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180251-mpy-to-smld-0",
+      "test_name": "mpy-to-smld-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 73,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1016460,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 13066120,
+              "mame": 0
+            },
+            {
+              "word": 4,
+              "hardware": 13066120,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "b63cf4730a9ce3823223b0b848653a61a571ecc26f41f7bace199d90c5abc174"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "6fe045e20ebb2202ec62ff4ff148705c91cbf1c178162735f9b1abc03d8e390c"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smld_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180257-mpy-to-smld-1",
+      "test_name": "mpy-to-smld-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 382,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13066120,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 1016460,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13066120,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "23f0a56df7dc70e0cfe087ff40897678bdefe66de16996e6b6724b67270e434c"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "6fd81ef449ba13365128b2ce3872d7cb463c22df05f2052a168eb3c450f532d3"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smld_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180303-mpy-to-smld-2",
+      "test_name": "mpy-to-smld-2",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 405,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13066120,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 1016460,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13066120,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "2327a97749cd0d4d9795c921c83cc74ebf05f61fcb0682ee2eef4f7351c0839d"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "1f7292e25ab02a4d2c69db0e70d397c9a786533444c108e4f5b41d3d816596a7"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smld_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180309-mpy-to-smld-3",
+      "test_name": "mpy-to-smld-3",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 405,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13066120,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 1016460,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13066120,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "c9adb4988f9af306d6ce8405068eb9bb0d0e7a7e6d22d1569ec0b3b9e0be91f5"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "b91fc33712fec6ef8e9efd45efbcedba16b64f44d928fc20600bf1ae8603f1a8"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smld_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180315-mpy-to-slmh-0",
+      "test_name": "mpy-to-slmh-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 212,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 14923520,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 15320576,
+              "mame": 0
+            },
+            {
+              "word": 4,
+              "hardware": 15320576,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "51dd79a622e9b6c98afd31c5ab6ac97505aed4287b596468a601fc8d63037187"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "182e46a18a5ae88ed4a708d5f22920b3fa0597646cf4901cd20f2e5d49be19d7"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "slmh_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180322-mpy-to-slmh-1",
+      "test_name": "mpy-to-slmh-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 867,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 15320576,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 14923520,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 15320576,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "dc0fe52ae50fc5381bf21e6eddb1aecd04ef865624cdf4b84a40b6b73a663227"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "f24c88d124ba1d8b959c5fe39ceab4b3ec17f4d8db2d3ac9914ac58fb9461c83"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "slmh_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180328-mpy-to-slml-0",
+      "test_name": "mpy-to-slml-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 73,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 16191362,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 3196767,
+              "mame": 0
+            },
+            {
+              "word": 4,
+              "hardware": 3196767,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "7b1844467635ea6138fe21e7d708472bcf63970f33f762d003e957edde3f1ea0"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "e95525e46761d222d47a6cd9f81314676dcf0d9c6c658e92c2387751106a2900"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "slml_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180334-mpy-to-slml-1",
+      "test_name": "mpy-to-slml-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 252,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13580448,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 585853,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13580448,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "028ab5d1b41ed00c49aa5467b5243fbe252adaa5ba4ce0ccc6a39013a0807980"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "eb7bafe932e1c611982524a8bbec83937b15220f28f6d77dd6264d8f9aaabe0b"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "slml_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-180346-mac-to-domh-1",
+      "test_name": "mac-to-domh-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 14923528,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 15320783,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "3b25ef742f01050854a534fb249c618eede1b745faad094603d3de5ef548c13c"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "31e316f48871ed09597eb27daea1a7da5a8b46fe54a7f174bdf7d0eafd884f8a"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-180352-mac-to-domh-2",
+      "test_name": "mac-to-domh-2",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "f5ba28f7237b27314fe01f89090438ced2619703a0056e8748f3a41a90e6f444"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "7485ebe35dbc73a485ee6a08a90487b62796131dc4adff997798c4c6e682ee0f"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-180359-mac-to-domh-3",
+      "test_name": "mac-to-domh-3",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "8c90cb5e25e05fb3040a5672774c2479fa12b07f2d174bf3f8b3c13fe801a403"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "fca48f3e37b2b3cda0a56152e5ae720d50c4130aa5abbdb7c6c035b423362921"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-180405-mac-after-mpy-0",
+      "test_name": "mac-after-mpy-0",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 147,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 2912865,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 3707374,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 2912865,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "1a1ad108f4365a052c0a1cdc21c6aed36e8c89b25e419952c0d32d3d5b7f96a2"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "c75f44b5a9ad0b344783e0b1b7408b67daf166c5947a6d12501f52187d353591"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_pipeline_seeded"
+    },
+    {
+      "hardware_run": "20260529-180411-mac-after-mpy-1",
+      "test_name": "mac-after-mpy-1",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 364,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13864350,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 13069841,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13864350,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "cbf0ea1fe6c3f78d5015211fa66c6f0de2408b46b6f065284cdad837be1abce7"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "4ccc027059e8411ffde81a3e275021cb3083dea666a9257ee1c65b3087533920"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_pipeline_seeded"
+    },
+    {
+      "hardware_run": "20260529-180417-mac-after-mpy-2",
+      "test_name": "mac-after-mpy-2",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 364,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13864350,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 13069841,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13864350,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "595b2da54b708f827e04616991a02e9eccfd572c8f0ec28b5d60a01c1d5521c0"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "492df248be8ac6770b7852a1e66c8de1b177ba02c85759da34625bcd7ffb6ccb"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_pipeline_seeded"
+    },
+    {
+      "hardware_run": "20260529-180424-mac-after-mpy-3",
+      "test_name": "mac-after-mpy-3",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 160,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 364,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13864350,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 13069841,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 13864350,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "b684b3a7d444fc6b43dd0df1999fe5586726924989da25a4d5fb0fc27a76ba6a"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "75c235db4a200c120faa3ca5cedd9d0008fdeb458f1114e1ee830c28632452d6"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_pipeline_seeded"
+    },
+    {
+      "hardware_run": "20260529-182735-mpy-latency-1-repeat-a",
+      "test_name": "mpy-latency-1-repeat-a",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 99,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            },
+            {
+              "word": 7,
+              "hardware": 3262158,
+              "mame": 4539000
+            },
+            {
+              "word": 11,
+              "hardware": 4539000,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "2c15fe2b88601b30189c329675db901219759b0c4720d8255d73276d38f2af55"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "5f1a5e0b3c1715b8942156f40d1da8e8545688b0c283217cdc03befa9fcd009d"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-182741-mac-to-domh-2-repeat-a",
+      "test_name": "mac-to-domh-2-repeat-a",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 16265784,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 15774007,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "5b0c4f09cb97faaf6000cf8e80d871321de99f55200fd9be76ca567ccba73597"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "e8d6d250f73b2c54bebd93a0e8f6a4f90cb90182deca50b9f578a84e57bc33b7"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-182806-mpy-latency-1-repeat-b",
+      "test_name": "mpy-latency-1-repeat-b",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 99,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            },
+            {
+              "word": 7,
+              "hardware": 3262158,
+              "mame": 4539000
+            },
+            {
+              "word": 11,
+              "hardware": 4539000,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "27f01c66cd636bbbde1dcbbb832a1693f3b9da27aa3555b3709c5ea4e7029650"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "17da523809d40497f05c109adff92c7a98bf195f77d5704993fc869a93a4738a"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-182812-mac-to-domh-2-repeat-b",
+      "test_name": "mac-to-domh-2-repeat-b",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 10,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "582f39cb79231ada33f7472246cf5c7bac4ac4e274c2e11b23a32627dd0fc97c"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "ae72584b016c64933d2f2804620f2cbfbef2b6530f32c2931a11c85961cdde71"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-182847-mac-to-domh-2-clk-500k",
+      "test_name": "mac-to-domh-2-clk-500k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 2,
+          "compared": 30,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 16265784,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 15320783,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 15774007,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "7de44f9c0a626f4a2d595fce3301255c32242d363e920f44544af31391816139"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "807009db3a820addfee8a8063e2461992eb3415bf0b1659d1e9965aa5ef9ca0c"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-182907-mpy-latency-1-clk-1000k",
+      "test_name": "mpy-latency-1-clk-1000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 19,
+          "compared": 30,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            },
+            {
+              "word": 7,
+              "hardware": 3262158,
+              "mame": 4539000
+            },
+            {
+              "word": 11,
+              "hardware": 4539000,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "78cc2b1dfbe94bd8ed0bf045368dbd3a301f4f79382a6396a4835bd5401c343f"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "beb4ecce9cfa0678d018e774a4a07687c4c12f0bc2756b50876892027f689fd4"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-182912-mac-to-domh-2-clk-1000k",
+      "test_name": "mac-to-domh-2-clk-1000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 2,
+          "compared": 30,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "97a175d88a2745f7e21ce2f0f5ec024549e86f9fd11a43aab97b9e39ce881b0d"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "c39f5ffd82827ec0e2d62dbead38cb579e11f90bd5893c2fca860dddf4df3ce6"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-182932-mpy-latency-1-clk-2000k",
+      "test_name": "mpy-latency-1-clk-2000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 9,
+          "compared": 14,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            },
+            {
+              "word": 7,
+              "hardware": 3262158,
+              "mame": 4539000
+            },
+            {
+              "word": 11,
+              "hardware": 4539000,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "08ef9bf094151d11494f0cff519bbf3d2c9ee7b061af7e6066db138512619e18"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "813de7d66bc213081687710b3d5e2a04e3b9ce4580966b7d8dccdbe5b6bb03b8"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-182937-mac-to-domh-2-clk-2000k",
+      "test_name": "mac-to-domh-2-clk-2000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 1,
+          "compared": 14,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "7f1ebfd2fd4b0085599fda5357d03e31c7db0586adf78a59fb757f6ca08450ed"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "f047f10037b47834d0d0e69af8a0fa4893e31fa197af5285b2573cce61494888"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-182957-mpy-latency-1-clk-4000k",
+      "test_name": "mpy-latency-1-clk-4000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 9,
+          "compared": 14,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 3,
+              "hardware": 179590,
+              "mame": 1456432
+            },
+            {
+              "word": 5,
+              "hardware": 1456432,
+              "mame": 3262158
+            },
+            {
+              "word": 7,
+              "hardware": 3262158,
+              "mame": 4539000
+            },
+            {
+              "word": 11,
+              "hardware": 4539000,
+              "mame": 3262158
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "40f3005d5c5e7fcb351cefd29cedca69c9d08610613a4e3526452c450594eed5"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "189acea3f9427053e1421c7915ffa31a9d190ef703cf059d53444626f9f3390f"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mpy_latency_seeded"
+    },
+    {
+      "hardware_run": "20260529-183002-mac-to-domh-2-clk-4000k",
+      "test_name": "mac-to-domh-2-clk-4000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 1,
+          "compared": 14,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1853687,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 1456432,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 511431,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 1003208,
+              "mame": 1203818
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "4e316ee231475c9009d3d0ab94fc2423d3f269154daa41aabaa7a0ceca280282"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "1fcd76030edd76904e10bcb398f2bf4935d9811b46597e8222d47983f1e1cc6f"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-185430-mac-to-domh-2-fixed-repeat-a",
+      "test_name": "mac-to-domh-2-fixed-repeat-a",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 89,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 1,
+              "hardware": 0,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 613701,
+              "mame": 1747673
+            },
+            {
+              "word": 5,
+              "hardware": 1747673,
+              "mame": 2615577
+            },
+            {
+              "word": 7,
+              "hardware": 2615577,
+              "mame": 3085283
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "8df4ec51cd937dff9f907ff1b36c0245a800286ecb36bc3e6c7b770744499350"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "1597349347723fe366b2e9da977099692f1889be1ef4211b5d43932bbac7536b"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-185436-mac-to-domh-2-fixed-repeat-b",
+      "test_name": "mac-to-domh-2-fixed-repeat-b",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 88,
+          "compared": 158,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 13870942,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13691932,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 613701,
+              "mame": 1747673
+            },
+            {
+              "word": 5,
+              "hardware": 1747673,
+              "mame": 2615577
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "88fa5d58745186dbc3590b8b23c3fb87c59f0a22a560d9f4d5c71acded1d413f"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "bf24a0f0c4e304c38912098938d98ecdc94b1fdec39e9d632651c4cf4f4f8811"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-185442-mac-to-domh-2-fixed-clk-1000k",
+      "test_name": "mac-to-domh-2-fixed-clk-1000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 16,
+          "compared": 30,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2906273,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 3085283,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 613701,
+              "mame": 1747673
+            },
+            {
+              "word": 5,
+              "hardware": 1747673,
+              "mame": 2615577
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "29c48c731c9737d12ea33ebc9c69e9809e87a9189db5a54111038762f11f4605"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "6eff530e95e2cde489981ad3e064b6b86cd25c14eed0576a95f4f54b184c6814"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-185448-mac-to-domh-2-fixed-clk-4000k",
+      "test_name": "mac-to-domh-2-fixed-clk-4000k",
+      "status": "legacy_superseded",
+      "disposition": "legacy underdeclared pre-rewire capture superseded by stronger explicit-seed hardware replays",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 7,
+          "compared": 14,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2906273,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 3085283,
+              "mame": 613701
+            },
+            {
+              "word": 3,
+              "hardware": 613701,
+              "mame": 1747673
+            },
+            {
+              "word": 5,
+              "hardware": 1747673,
+              "mame": 2615577
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "aed67da24de51c6479f3b6ff83f5889178ba637f2eedfd2ef717aeffd13692af"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "8186712b9d01b83ef28cd32681b3becff8e27a660c9c53020f7e5b6d13ec313a"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-202330-dual-mac-to-domh-3",
+      "test_name": "dual-mac-to-domh-3",
+      "status": "recapture_optional",
+      "disposition": "optional fully declared recapture of inherited pipeline/output state; stronger explicit-seed hardware siblings pass",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 29,
+          "compared": 29,
+          "hardware_skip": 3,
+          "mame_skip": 1,
+          "first_mismatches": []
+        },
+        {
+          "wire": 1,
+          "matches": 28,
+          "compared": 30,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 1203818,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 3145728,
+              "mame": 14680064
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "e52ab8a321969f1421a56b821e10ef8fa8be4d1c8ba023a9b3da614dc234f8a7"
+          },
+          {
+            "name": "serial-input-si1-decode.json",
+            "sha256": "a474acdaaf0739c46e15249b338580a108edd9dbfd47644f6826cd344f58a683"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "e300c9e17aa6e15deb4a74a490c73c43647d59932fe4e8cfe75852424289cca1"
+          },
+          {
+            "name": "serial-so1-decode.json",
+            "sha256": "efaec17bc45578a6ad879f0c66a50f9f478ea3fe72bcb5503dd1ae6fbfa17281"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "mac_domh_seeded"
+    },
+    {
+      "hardware_run": "20260529-202339-dual-mpy-to-smhd-0",
+      "test_name": "dual-mpy-to-smhd-0",
+      "status": "recapture_optional",
+      "disposition": "optional fully declared recapture of inherited pipeline/output state; stronger explicit-seed hardware siblings pass",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 15,
+          "compared": 32,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 55,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 13870942,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 16163515,
+              "mame": 3085283
+            },
+            {
+              "word": 4,
+              "hardware": 16163515,
+              "mame": 2615577
+            }
+          ]
+        },
+        {
+          "wire": 1,
+          "matches": 17,
+          "compared": 32,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 55,
+              "mame": 613701
+            },
+            {
+              "word": 1,
+              "hardware": 15573398,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 13691932,
+              "mame": 1747673
+            },
+            {
+              "word": 4,
+              "hardware": 13691932,
+              "mame": 2615577
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "e5a8fae714b2661f8d99dd5f160e90eaf1f1d1b993ed56d2f80aa9f6752e3217"
+          },
+          {
+            "name": "serial-input-si1-decode.json",
+            "sha256": "6a690d15e266309d5f8a43dd291d2a10cb04f814b7a0782a4196159c42c2cd55"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "fbba6eb9822aca127cea287dcbafbd354c8a0283620e4bb6e678cc0f376510bd"
+          },
+          {
+            "name": "serial-so1-decode.json",
+            "sha256": "a9041298a53afdac20ec133afb1de5a7491fc108697e32d96fa1a2868e21c6bf"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smhd_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-202348-dual-mpy-to-smhd-1",
+      "test_name": "dual-mpy-to-smhd-1",
+      "status": "recapture_optional",
+      "disposition": "optional fully declared recapture of inherited pipeline/output state; stronger explicit-seed hardware siblings pass",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 27,
+          "compared": 30,
+          "hardware_skip": 2,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 2906273,
+              "mame": 0
+            },
+            {
+              "word": 13,
+              "hardware": 174105,
+              "mame": 1747673
+            },
+            {
+              "word": 19,
+              "hardware": 14942243,
+              "mame": 15029543
+            }
+          ]
+        },
+        {
+          "wire": 1,
+          "matches": 29,
+          "compared": 29,
+          "hardware_skip": 3,
+          "mame_skip": 1,
+          "first_mismatches": []
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "234e334bb3cf975efe5cc5820e37c806705aaca4da717671c5352c4404a21541"
+          },
+          {
+            "name": "serial-input-si1-decode.json",
+            "sha256": "b6c5614431c204a50341529c54ea03bb4a33a687fecad62e45e953b7211fb779"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "1e2aafad51bbe2e4b20108c2b8a38bf626140fe168e2fd9d68351aa69533ec35"
+          },
+          {
+            "name": "serial-so1-decode.json",
+            "sha256": "22ea726772aba1d8b8fe722ba2504eb527bbb21b965441574c4c0c6cdda8b99b"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smhd_store_seeded"
+    },
+    {
+      "hardware_run": "20260529-202416-dual-mpy-to-smld-0",
+      "test_name": "dual-mpy-to-smld-0",
+      "status": "recapture_optional",
+      "disposition": "optional fully declared recapture of inherited pipeline/output state; stronger explicit-seed hardware siblings pass",
+      "wire_results": [
+        {
+          "wire": 0,
+          "matches": 24,
+          "compared": 32,
+          "hardware_skip": 0,
+          "mame_skip": 0,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 111,
+              "mame": 0
+            },
+            {
+              "word": 1,
+              "hardware": 8388608,
+              "mame": 0
+            },
+            {
+              "word": 2,
+              "hardware": 0,
+              "mame": 8388608
+            },
+            {
+              "word": 6,
+              "hardware": 8388608,
+              "mame": 0
+            }
+          ]
+        },
+        {
+          "wire": 1,
+          "matches": 22,
+          "compared": 32,
+          "hardware_skip": 0,
+          "mame_skip": 3,
+          "first_mismatches": [
+            {
+              "word": 0,
+              "hardware": 111,
+              "mame": 0
+            },
+            {
+              "word": 3,
+              "hardware": 0,
+              "mame": 8388608
+            },
+            {
+              "word": 7,
+              "hardware": 8388608,
+              "mame": 0
+            },
+            {
+              "word": 15,
+              "hardware": 8388608,
+              "mame": 0
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "source_files": [
+          {
+            "name": "serial-input-decode.json",
+            "sha256": "4f17e33a3b2b36d896c50c502fe7b138ac27aa74d3c3d2c575d1da426e9dbe09"
+          },
+          {
+            "name": "serial-input-si1-decode.json",
+            "sha256": "15801cd63cbef43e78040e94eadffa0ed6e00e8dd8ed884bddca9dc1640df18a"
+          },
+          {
+            "name": "serial-decode.json",
+            "sha256": "faa0fe5caf17a52d511de7a931570fe8acded2df65c8994b35f1581f28932e13"
+          },
+          {
+            "name": "serial-so1-decode.json",
+            "sha256": "c69c0fc15a17c1d894668063368ed3791906831369e8e2009801ac9b94c33902"
+          }
+        ]
+      },
+      "release_blocking": false,
+      "replacement_group": "smld_store_seeded"
+    }
+  ],
+  "interpretation": "The 42 legacy_superseded rows are replaced by later explicit-seed, dual-wire hardware replays. The four recapture_optional rows preserve narrow questions about undeclared inherited bench state. Neither status may be reported as a shipping-path failure without a new fully declared reproduction.",
+  "replacement_groups": {
+    "mpy_latency_seeded": [
+      "mpy-latency-1-clk-500k",
+      "followup-smhc-slot-mpy-read-0",
+      "followup-smhc-slot-mpy-read-1",
+      "followup-smhc-slot-mpy-read-2",
+      "followup-smhc-slot-mpy-read-3",
+      "followup-smhc-slot-mpy-read-4",
+      "followup-smhc-slot-mpy-read-5"
+    ],
+    "smhd_store_seeded": [
+      "dual-mpy-to-smhd-2",
+      "dual-mpy-to-smhd-3",
+      "followup-store-smhd-mpy-read-0",
+      "followup-store-smhd-mpy-read-1",
+      "followup-store-smhd-mpy-read-2",
+      "followup-store-smhd-mpy-read-3",
+      "followup-store-smhd-mpy-read-4",
+      "followup-store-smhd-mpy-read-5"
+    ],
+    "smld_store_seeded": [
+      "dual-mpy-to-smld-1",
+      "dual-mpy-to-smld-2",
+      "dual-mpy-to-smld-3",
+      "followup-store-smld-mpy-read-0"
+    ],
+    "slmh_store_seeded": [
+      "followup-store-slmh-mpy-read-0",
+      "followup-store-slmh-mpy-read-1",
+      "followup-store-slmh-mpy-read-2",
+      "followup-store-slmh-mpy-read-3",
+      "followup-store-slmh-mpy-read-4",
+      "followup-store-slmh-mpy-read-5"
+    ],
+    "slml_store_seeded": [
+      "followup-store-slml-mpy-read-0",
+      "followup-store-slml-mpy-read-1",
+      "followup-store-slml-mpy-read-2",
+      "followup-store-slml-mpy-read-3",
+      "followup-store-slml-mpy-read-4",
+      "followup-store-slml-mpy-read-5"
+    ],
+    "mac_domh_seeded": [
+      "mac-to-domh-0",
+      "dual-mac-to-domh-0",
+      "dual-mac-to-domh-1",
+      "dual-mac-to-domh-2",
+      "followup-smhc-slot-mac-read-0",
+      "followup-smhc-slot-mac-read-1",
+      "followup-smhc-slot-mac-read-2",
+      "followup-smhc-slot-mac-read-3",
+      "followup-smhc-slot-mac-read-4",
+      "followup-smhc-slot-mac-read-5"
+    ],
+    "mac_pipeline_seeded": [
+      "followup-smhc-slot-mac-read-0",
+      "followup-smhc-slot-mac-read-1",
+      "followup-smhc-slot-mac-read-2",
+      "followup-smhc-slot-mac-read-3",
+      "followup-smhc-slot-mac-read-4",
+      "followup-smhc-slot-mac-read-5",
+      "followup-store-smhd-mac-read-0",
+      "followup-store-smhd-mac-read-1",
+      "followup-store-smhd-mac-read-2",
+      "followup-store-smhd-mac-read-3",
+      "followup-store-smhd-mac-read-4",
+      "followup-store-smhd-mac-read-5"
+    ]
+  }
+}

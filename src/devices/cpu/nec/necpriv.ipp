@@ -57,10 +57,10 @@ enum BREGS {
 
 /************************************************************************/
 
-#define read_mem_byte(a)        m_program->read_byte(m_chip_type == V33_TYPE ? v33_translate(a) : (a))
-#define read_mem_word(a)        m_program->read_word_unaligned(m_chip_type == V33_TYPE ? v33_translate(a) : (a))
-#define write_mem_byte(a,d)     m_program->write_byte(m_chip_type == V33_TYPE ? v33_translate(a) : (a), (d))
-#define write_mem_word(a,d)     m_program->write_word_unaligned(m_chip_type == V33_TYPE ? v33_translate(a) : (a), (d))
+#define read_mem_byte(a)        mem_read_byte((a))
+#define read_mem_word(a)        mem_read_word((a))
+#define write_mem_byte(a,d)     do { mem_write_byte((a), (d)); } while (0)
+#define write_mem_word(a,d)     do { mem_write_word((a), (d)); } while (0)
 
 #define read_port_byte(a)       io_read_byte(a)
 #define read_port_word(a)       io_read_word(a)
@@ -73,7 +73,7 @@ enum BREGS {
 
 #define SegBase(Seg) (Sreg(Seg) << 4)
 
-#define DefaultBase(Seg) ((m_seg_prefix && (Seg==DS0 || Seg==SS)) ? m_prefix_base : Sreg(Seg) << 4)
+#define DefaultBase(Seg) (m_iram_prefix ? 0 : ((m_seg_prefix && (Seg==DS0 || Seg==SS)) ? m_prefix_base : Sreg(Seg) << 4))
 
 #define GetMemB(Seg,Off) (read_mem_byte(DefaultBase(Seg) + (Off)))
 #define GetMemW(Seg,Off) (read_mem_word(DefaultBase(Seg) + (Off)))

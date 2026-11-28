@@ -64,6 +64,7 @@ private:
 	int m_irq;
 	int m_type;
 	u8 m_tcnt, m_tcsr, m_rst;
+	bool m_ovf_clear_armed;
 	u64 m_tcnt_cycle_base;
 
 	void tcnt_update(u64 current_time = 0);

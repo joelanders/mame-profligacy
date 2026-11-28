@@ -2,6 +2,7 @@ name: CI (Linux)
 
 on:
   push:
+    branches: [master]
     paths:
     - '.github/workflows/**'
     - '3rdparty/**'
@@ -10,15 +11,13 @@ on:
     - 'src/**'
     - 'COPYING'
     - 'makefile'
-  pull_request:
-    paths:
-    - '.github/workflows/**'
-    - '3rdparty/**'
-    - 'hash/**'
-    - 'scripts/**'
-    - 'src/**'
-    - 'COPYING'
-    - 'makefile'
+  # Linux is not a product target.  Keep the full upstream-style matrix
+  # available on demand and for master; focused no-ROM tests remain a PR gate.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

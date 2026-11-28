@@ -21,6 +21,7 @@
 
 // device type declarations
 DECLARE_DEVICE_TYPE(HD44780,  hd44780_device)
+DECLARE_DEVICE_TYPE(HD44780_A00_RECONSTRUCTED, hd44780_a00_reconstructed_device)
 DECLARE_DEVICE_TYPE(HD44780U, hd44780u_device)
 DECLARE_DEVICE_TYPE(SED1278,  sed1278_device)
 DECLARE_DEVICE_TYPE(KS0066,   ks0066_device)
@@ -70,6 +71,7 @@ protected:
 	virtual u8 control_read();
 	virtual void data_write(u8 data);
 	virtual u8 data_read();
+	virtual u8 const *default_cgrom() const { return nullptr; }
 
 private:
 	enum        { DDRAM, CGRAM };
@@ -121,6 +123,24 @@ private:
 	u8          m_render_buf[80 * 16];
 	bool        m_function_set_at_any_time;
 };
+
+
+// HD44780 A00 character generator reconstructed from the published 1985
+// datasheet.  This device has no external ROM dependency; use it only where
+// that documented A00 mask is the intended hardware configuration.
+class hd44780_a00_reconstructed_device : public hd44780_base_device
+{
+public:
+	hd44780_a00_reconstructed_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+protected:
+	virtual u8 const *default_cgrom() const override;
+};
+
+
+// Stable access for hosts that render the same emulated LCD outside MAME's
+// screen device.  The returned table is 256 characters x 16 row addresses.
+u8 const *hd44780_a00_reconstructed_cgrom();
 
 
 class hd44780_device : public hd44780_base_device

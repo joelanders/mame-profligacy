@@ -1,0 +1,113 @@
+{
+  "schema": "korgprophecy-public-controls-v1",
+  "scope": [
+    "scripts/korgprophecy_*",
+    "src/devices/cpu/h8",
+    "src/devices/cpu/nec",
+    "src/devices/cpu/tms57002",
+    "src/mame/korg/korgprophecy.cpp"
+  ],
+  "contract": "Every KPROP_* token in scope must occur in exactly one category. Categories describe public disposition, not proof of hardware correctness.",
+  "categories": {
+    "shipping_host_or_engine_seam": {
+      "release_disposition": "retain and document",
+      "names": [
+        "KPROP_ADIN",
+        "KPROP_ADIN8",
+        "KPROP_DSP_PERFRAME",
+        "KPROP_GUI_EVTQ_SEG",
+        "KPROP_LCD_SWAP"
+      ]
+    },
+    "deterministic_test_seam": {
+      "release_disposition": "retain while covered by public gates",
+      "names": [
+        "KPROP_DSP2_INPUT_ROUTE",
+        "KPROP_DSP_HOST_MAP",
+        "KPROP_DSP_INPUT_SINE_AMP",
+        "KPROP_DSP_INPUT_SINE_FREQ",
+        "KPROP_DSP_INPUT_SINE_TAG",
+        "KPROP_DSP_SERIAL_OUTPUT_PENDING_HALFCYCLE",
+        "KPROP_DSP_SERIAL_OUTPUT_PENDING_HALFCYCLE_LEFT",
+        "KPROP_DSP_SERIAL_OUTPUT_WRITE_HANDOFF",
+        "KPROP_DSP_SMHC_TRUNC_BITS",
+        "KPROP_FAULT_DROP_V55_H8_3X_TAIL_AT",
+        "KPROP_H8_DISABLE_NATIVE_BUS_TIMING",
+        "KPROP_INJECT_NOTE",
+        "KPROP_INJECT_SYSEX",
+        "KPROP_PF4_CMEM_DEOPT",
+        "KPROP_PF4_FORCE_CMEM_COMPILE_FAIL",
+        "KPROP_PF4_FORCE_CMEM_UNSAFE",
+        "KPROP_PF4_FORCE_MIDFRAME_FALLBACK",
+        "KPROP_PF4_MODE_UNSAFE_COMPILE",
+        "KPROP_PF4_OP_STATS",
+        "KPROP_PF4_STATS",
+        "KPROP_SYNC_BOARD_UART_EDGES",
+        "KPROP_TRACE_DSP_SERIAL_OUTPUT_END",
+        "KPROP_TRACE_DSP_SERIAL_OUTPUT_MAX",
+        "KPROP_TRACE_DSP_SERIAL_OUTPUT_START",
+        "KPROP_TRACE_DSP_SERIAL_OUTPUT_TAG",
+        "KPROP_V55_ADC_BANKSW_EXPERIMENT",
+        "KPROP_V55_H8_DELIVERY_RETRY",
+        "KPROP_V55_SERIAL_BANKSW_EXPERIMENT",
+        "KPROP_V55_TM2_BANK",
+        "KPROP_V55_TM2_BANKSW_EXPERIMENT",
+        "KPROP_V55_TM3_BANK"
+      ]
+    },
+    "diagnostic_control": {
+      "release_disposition": "retain as opt-in diagnostics used by public headless control-path regressions",
+      "names": [
+        "KPROP_CONTROL_FLIGHT_RECORDER",
+        "KPROP_LOG_CONTROL_HEALTH",
+        "KPROP_LOG_CONTROL_HEALTH_FINAL",
+        "KPROP_TRACE_H8_CONTROL_END",
+        "KPROP_TRACE_H8_CONTROL_EVENTS",
+        "KPROP_TRACE_H8_CONTROL_START"
+      ]
+    },
+    "compatibility_or_stale_script_input": {
+      "release_disposition": "empty after stale lifecycle inputs were retired and validated defaults were baked",
+      "names": []
+    },
+    "script_configuration": {
+      "release_disposition": "retain as documented runner inputs",
+      "names": [
+        "KPROP_GATE_MAME",
+        "KPROP_GATE_NVRAM",
+        "KPROP_GATE_OUT",
+        "KPROP_GATE_REQUIRE_ARM64",
+        "KPROP_GATE_ROMPATH",
+        "KPROP_GATE_SYSTEM"
+      ]
+    },
+    "emitted_log_or_compile_label": {
+      "release_disposition": "not an environment control",
+      "names": [
+        "KPROP_ADC",
+        "KPROP_CONTROL_HEALTH",
+        "KPROP_DELIVERY_RETRY",
+        "KPROP_DSPHOSTMAP",
+        "KPROP_DSPSEROUT",
+        "KPROP_FAULT_DROP",
+        "KPROP_FINAL_HEALTH",
+        "KPROP_FINAL_PROTOCOL",
+        "KPROP_FINAL_RTOS",
+        "KPROP_FLIGHT",
+        "KPROP_FLIGHT_BEGIN",
+        "KPROP_FLIGHT_END",
+        "KPROP_GUI",
+        "KPROP_H8CTL",
+        "KPROP_H8DSP",
+        "KPROP_H8_RX_MISMATCH",
+        "KPROP_H8V55_RXERR",
+        "KPROP_H8WIRE",
+        "KPROP_JIT_A64",
+        "KPROP_JIT_RUNTIME",
+        "KPROP_JIT_X64",
+        "KPROP_LCD",
+        "KPROP_V55_H8_DELIVERY"
+      ]
+    }
+  }
+}

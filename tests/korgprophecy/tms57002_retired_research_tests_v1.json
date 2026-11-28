@@ -1,0 +1,84 @@
+{
+  "schema": "tms57002-retired-research-tests-v1",
+  "claim": "These tests remain named and runnable through TMS57TEST_ONLY=legacy for research archaeology. They are not public conformance tests and contribute zero cases to the release denominator.",
+  "summary": {
+    "retired_tests": 12,
+    "legacy_asset_dependent": 11,
+    "incomplete_synthetic": 1,
+    "release_denominator": 0
+  },
+  "tests": [
+    {
+      "id": "dsp3_a02_su480002_input_sensitivity",
+      "category": "assertion_free_input_sensitivity",
+      "release_denominator": false,
+      "disposition": "observational legacy diagnostic; no pass/fail assertions"
+    },
+    {
+      "id": "dsp3_a02_su480003_input_sensitivity",
+      "category": "assertion_free_input_sensitivity",
+      "release_denominator": false,
+      "disposition": "observational legacy diagnostic; no pass/fail assertions"
+    },
+    {
+      "id": "dsp3_a02_su480004_input_sensitivity",
+      "category": "assertion_free_input_sensitivity",
+      "release_denominator": false,
+      "disposition": "observational legacy diagnostic; no pass/fail assertions"
+    },
+    {
+      "id": "dsp3_a02_su480005_input_sensitivity",
+      "category": "assertion_free_input_sensitivity",
+      "release_denominator": false,
+      "disposition": "observational legacy diagnostic; no pass/fail assertions"
+    },
+    {
+      "id": "dsp3_a02_su480006_input_sensitivity",
+      "category": "assertion_free_input_sensitivity",
+      "release_denominator": false,
+      "disposition": "observational legacy diagnostic; no pass/fail assertions"
+    },
+    {
+      "id": "dsp3_a02_sine_su480003_snapshot_replay",
+      "category": "legacy_mame_snapshot_replay",
+      "release_denominator": false,
+      "disposition": "historical implementation-trace regression requiring unavailable exact assets; not an independent silicon oracle"
+    },
+    {
+      "id": "dsp3_a02_su480004_snapshot_replay",
+      "category": "legacy_mame_snapshot_replay",
+      "release_denominator": false,
+      "disposition": "historical implementation-trace regression requiring unavailable exact assets; not an independent silicon oracle"
+    },
+    {
+      "id": "dsp3_a02_su480005_snapshot_replay",
+      "category": "legacy_mame_snapshot_replay",
+      "release_denominator": false,
+      "disposition": "historical implementation-trace regression requiring unavailable exact assets; not an independent silicon oracle"
+    },
+    {
+      "id": "dsp3_a02_su480006_snapshot_replay",
+      "category": "legacy_mame_snapshot_replay",
+      "release_denominator": false,
+      "disposition": "historical implementation-trace regression requiring unavailable exact assets; not an independent silicon oracle"
+    },
+    {
+      "id": "dsp3_a02_su480082_snapshot_replay",
+      "category": "legacy_mame_snapshot_replay",
+      "release_denominator": false,
+      "disposition": "historical implementation-trace regression requiring unavailable exact assets; not an independent silicon oracle"
+    },
+    {
+      "id": "dsp3_a02_su480001_pc68_mac_matches_input",
+      "category": "legacy_snapshot_relation",
+      "release_denominator": false,
+      "disposition": "real assertion over unavailable snapshot seeds; underlying MAC/MPY behavior is covered by self-contained silicon-derived tests"
+    },
+    {
+      "id": "dsp3_a02_f8_ff_tail_chain",
+      "category": "incomplete_synthetic_fixture",
+      "release_denominator": false,
+      "disposition": "unfinished fixture; intended observable behavior is covered by portable hardware replays"
+    }
+  ]
+}

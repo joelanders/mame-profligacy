@@ -96,6 +96,10 @@ public:
 	virtual void customize_input_type_list(std::vector<input_type_entry> &typelist) = 0;
 
 	// video overridables
+	// An embedding audio host may request smaller recording batches, in machine
+	// sample-rate frames. Zero preserves the normal 50 Hz update cadence. This
+	// changes delivery granularity, not device clocks, routing or PCM conversion.
+	virtual uint32_t audio_recording_quantum() const { return 0; }
 	virtual void add_audio_to_recording(const int16_t *buffer, int samples_this_frame) = 0;
 	virtual std::vector<ui::menu_item> get_slider_list() = 0;
 

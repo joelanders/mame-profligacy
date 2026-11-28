@@ -51,16 +51,38 @@ def hexsplit(str):
         res.append(int(str[i:i+2], 16))
     return res
         
-def has_memory(ins):
-    for s in ["read", "write"]:
+def memory_access_refund(ins):
+    for s in ["read16i(", "read16(", "read8(", "write16(", "write8("]:
         if s in ins:
-            return True
-    return False
+            return "refund_memory_access();"
+    # GT913 indirect-bank helpers account for their access with an explicit
+    # one-state internal cycle rather than the generic H8 memory helpers.
+    for s in ["read16ib(", "read8ib(", "write16ib(", "write8ib("]:
+        if s in ins:
+            return "m_icount++;"
+    return None
+
+def has_memory(ins):
+    return memory_access_refund(ins) is not None
 
 def has_eat(ins):
     if "eat-all-cycles" in ins:
         return True
     return False
+
+def has_timed_phase(ins):
+    # These operations debit an already-completed internal phase rather than
+    # performing a memory access.  Yield afterward so scheduled device events
+    # are serviced before the following bus phase, without replay/refund.
+    return ("internal(" in ins
+            or "reset_processing_cycles()" in ins
+            or "interrupt_priority_cycles()" in ins
+            or "begin_dma_bus_cycle(" in ins)
+
+def timed_phase_checkpoint_condition(ins):
+    if "internal(" in ins:
+        return "internal_phase_checkpointing_enabled() && m_icount <= m_bcount"
+    return "m_icount <= m_bcount"
 
 def save_full_one(f, t, name, source):
     print("void %s::%s_full()" % (t, name), file=f)
@@ -71,13 +93,18 @@ def save_full_one(f, t, name, source):
             print(line, file=f)
             print("\tif(m_icount <= m_bcount) {", file=f)
             print("\t\tif(access_to_be_redone()) {", file=f)
-            print("\t\t\tm_icount++;", file=f)
+            print("\t\t\t%s" % memory_access_refund(line), file=f)
+            print("\t\t\tabort_timeslice();", file=f)
             print("\t\t\tm_inst_substate = %d;" % substate, file=f)
             print("\t\t} else", file=f)
             print("\t\t\tm_inst_substate = %d;" % (substate+1), file=f)
             print("\t\treturn;", file=f)
             print("\t}", file=f)
             substate += 2
+        elif has_timed_phase(line):
+            print(line, file=f)
+            print("\tif(%s) { m_inst_substate = %d; return; }" % (timed_phase_checkpoint_condition(line), substate), file=f)
+            substate += 1
         elif has_eat(line):
             print("\tif(m_icount) { m_icount = m_bcount; } m_inst_substate = %d; return;" % substate, file=f)
             substate += 1
@@ -99,7 +126,8 @@ def save_partial_one(f, t, name, source):
             print(line, file=f)
             print("\tif(m_icount <= m_bcount) {", file=f)
             print("\t\tif(access_to_be_redone()) {", file=f)
-            print("\t\t\tm_icount++;", file=f)
+            print("\t\t\t%s" % memory_access_refund(line), file=f)
+            print("\t\t\tabort_timeslice();", file=f)
             print("\t\t\tm_inst_substate = %d;" % substate, file=f)
             print("\t\t} else", file=f)
             print("\t\t\tm_inst_substate = %d;" % (substate+1), file=f)
@@ -108,6 +136,12 @@ def save_partial_one(f, t, name, source):
             print("\t[[fallthrough]];", file=f)
             print("case %d:;" % (substate+1), file=f)
             substate += 2
+        elif has_timed_phase(line):
+            print(line, file=f)
+            print("\tif(%s) { m_inst_substate = %d; return; }" % (timed_phase_checkpoint_condition(line), substate), file=f)
+            print("\t[[fallthrough]];", file=f)
+            print("case %d:;" % substate, file=f)
+            substate += 1
         elif has_eat(line):
             print("\tif(m_icount) { m_icount = m_bcount; } m_inst_substate = %d; return;" % substate, file=f)
             print("case %d:;" % substate, file=f)
@@ -511,4 +545,3 @@ def main(argv):
 # ======================================================================
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
-

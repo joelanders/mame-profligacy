@@ -24,7 +24,8 @@ const int h8_watchdog_device::div_s [8] = { 1, 6, 7, 9, 11, 13, 15, 17 };
 h8_watchdog_device::h8_watchdog_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	device_t(mconfig, H8_WATCHDOG, tag, owner, clock),
 	m_cpu(*this, finder_base::DUMMY_TAG),
-	m_intc(*this, finder_base::DUMMY_TAG)
+	m_intc(*this, finder_base::DUMMY_TAG),
+	m_ovf_clear_armed(false)
 {
 }
 
@@ -54,6 +55,17 @@ void h8_watchdog_device::tcnt_update(u64 cur_time)
 		int shift = (m_type == S ? div_s : div_bh)[m_tcsr & TCSR_CKS];
 		if(!cur_time)
 			cur_time = m_cpu->total_cycles();
+
+		// The CPU can present a time a few cycles before the previous update:
+		// its timeslice-entry update excludes the cycles the last instruction
+		// ran past the previous slice, and an SCI clock event updates the CPU
+		// at the current time from inside an update at the earlier event time.
+		// TCNT never counts backwards, so such an update changes nothing.
+		// Counting it would make one prescaler step back with TCNT at zero
+		// wrap the unsigned step difference into a spurious overflow.
+		if(cur_time < m_tcnt_cycle_base)
+			return;
+
 		u64 spos = m_tcnt_cycle_base >> shift;
 		u64 epos = cur_time >> shift;
 
@@ -70,10 +82,9 @@ void h8_watchdog_device::tcnt_update(u64 cur_time)
 				else
 					m_cpu->reset();
 			} else {
-				if(!(m_tcsr & TCSR_OVF)) {
-					m_tcsr |= TCSR_OVF;
-					m_intc->internal_interrupt(m_irq);
-				}
+				m_tcsr |= TCSR_OVF;
+				m_ovf_clear_armed = false;
+				m_intc->internal_interrupt(m_irq);
 			}
 		}
 	} else
@@ -86,7 +97,11 @@ u16 h8_watchdog_device::wd_r()
 		tcnt_update();
 
 	u8 tcsr_mask = m_type == B ? 0x10 : 0x18;
-	return ((m_tcsr | tcsr_mask) << 8) | m_tcnt;
+	const u16 value = ((m_tcsr | tcsr_mask) << 8) | m_tcnt;
+	if(!machine().side_effects_disabled() && (m_tcsr & TCSR_OVF))
+		m_ovf_clear_armed = true;
+
+	return value;
 }
 
 void h8_watchdog_device::wd_w(offs_t offset, u16 data, u16 mem_mask)
@@ -98,12 +113,31 @@ void h8_watchdog_device::wd_w(offs_t offset, u16 data, u16 mem_mask)
 		tcnt_update();
 		if(!(m_tcsr & TCSR_TME) && (data & TCSR_TME))
 			m_tcnt_cycle_base = m_cpu->total_cycles();
-		m_tcsr = (m_tcsr & data & TCSR_OVF) | (data & 0x7f);
+
+		const bool keep_ovf = (m_tcsr & TCSR_OVF) && ((data & TCSR_OVF) || !m_ovf_clear_armed);
+		m_tcsr = (data & 0x7f) | (keep_ovf ? TCSR_OVF : 0);
+
+		if(!(m_tcsr & TCSR_OVF))
+			m_ovf_clear_armed = false;
 		m_cpu->internal_update();
 	}
 
 	if((data & 0xff00) == 0x5a00) {
 		if(m_tcsr & TCSR_TME) {
+			// TCNT counts lazily.  In interval mode, settle it at the current
+			// time first, so an overflow that is due but not yet delivered
+			// still happens before the write replaces the count and the base
+			// time.  total_cycles() already includes the write's bus cycle, so
+			// this also counts a prescaler step in the write's last state (T3),
+			// which loses to the write on hardware; only TCNT=FF with a step in
+			// that state differs.
+			// In watchdog mode, settling could call m_cpu->reset() from inside
+			// the write instruction: the peripherals would reset, and then
+			// prefetch_done() would overwrite the CPU's reset state.  So the
+			// write replaces TCNT unsettled there, and a kick racing the
+			// overflow is accepted.
+			if(!(m_tcsr & TCSR_WT))
+				tcnt_update();
 			m_tcnt = data & 0xff;
 			m_tcnt_cycle_base = m_cpu->total_cycles();
 			//logerror("%10lld tcnt = %02x\n", m_tcnt_cycle_base, m_tcnt);
@@ -137,6 +171,7 @@ void h8_watchdog_device::device_start()
 	save_item(NAME(m_tcnt));
 	save_item(NAME(m_tcsr));
 	save_item(NAME(m_rst));
+	save_item(NAME(m_ovf_clear_armed));
 	save_item(NAME(m_tcnt_cycle_base));
 }
 
@@ -146,4 +181,5 @@ void h8_watchdog_device::device_reset()
 	m_tcnt = 0x00;
 	m_tcsr = 0x00;
 	m_rst = 0x00;
+	m_ovf_clear_armed = false;
 }

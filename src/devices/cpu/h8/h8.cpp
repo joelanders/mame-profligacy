@@ -26,6 +26,17 @@
 #include "h8_port.h"
 #include "h8d.h"
 
+// Debug builds check the timeslice-entry poll skip in execute_run(): the skip
+// path still runs the full poll and verifies the rule the skip relies on.
+// Release builds take the skip without the check.
+#ifndef H8_CHECK_ENTRY_SKIP
+#ifdef MAME_DEBUG
+#define H8_CHECK_ENTRY_SKIP 1
+#else
+#define H8_CHECK_ENTRY_SKIP 0
+#endif
+#endif
+
 h8_device::h8_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor map_delegate) :
 	h8_cpu_base(mconfig, type, tag, owner, clock),
 	device_nvram_interface(mconfig, *this),
@@ -40,8 +51,10 @@ h8_device::h8_device(const machine_config &mconfig, device_type type, const char
 	m_standby_cb(*this),
 	m_PPC(0), m_NPC(0), m_PC(0), m_PIR(0), m_EXR(0), m_CCR(0), m_MAC(0), m_MACF(0),
 	m_TMP1(0), m_TMP2(0), m_TMPR(0), m_inst_state(0), m_inst_substate(0), m_icount(0), m_bcount(0),
+	m_last_memory_access_cycles(0),
 	m_irq_vector(0), m_taken_irq_vector(0), m_irq_level(0), m_taken_irq_level(0), m_irq_nmi(false),
-	m_standby_pending(false), m_standby_time(0), m_nvram_defval(0), m_nvram_battery(true)
+	m_standby_pending(false), m_standby_time(0), m_nvram_defval(0), m_nvram_battery(true),
+	m_next_event(0), m_next_event_valid(false)
 {
 	m_supports_advanced = false;
 	m_mode_advanced = false;
@@ -147,6 +160,7 @@ void h8_device::device_start()
 	}
 
 	save_item(NAME(m_current_dma));
+	save_item(NAME(m_dma_bus_owner));
 	save_item(NAME(m_cycles_base));
 
 	save_item(NAME(m_PPC));
@@ -168,6 +182,7 @@ void h8_device::device_start()
 	save_item(NAME(m_requested_state));
 	save_item(NAME(m_bcount));
 	save_item(NAME(m_count_before_instruction_step));
+	save_item(NAME(m_last_memory_access_cycles));
 	save_item(NAME(m_irq_vector));
 	save_item(NAME(m_taken_irq_vector));
 	save_item(NAME(m_irq_level));
@@ -192,19 +207,23 @@ void h8_device::device_start()
 	m_inst_substate = 0;
 	m_count_before_instruction_step = 0;
 	m_requested_state = -1;
+	m_last_memory_access_cycles = 0;
 	m_dma_device = nullptr;
 	m_dtc_device = nullptr;
+	m_dma_bus_owner = -1;
 
 	memset(m_dma_channel, 0, sizeof(m_dma_channel));
 }
 
 void h8_device::device_reset()
 {
+	m_next_event_valid = false;
 	m_cycles_base = machine().time().as_ticks(clock());
 	m_inst_state = STATE_RESET;
 	m_inst_substate = 0;
 	m_count_before_instruction_step = 0;
 	m_requested_state = -1;
+	m_last_memory_access_cycles = 0;
 
 	m_irq_vector = 0;
 	m_irq_level = -1;
@@ -212,6 +231,7 @@ void h8_device::device_reset()
 	m_taken_irq_vector = 0;
 	m_taken_irq_level = -1;
 	m_current_dma = -1;
+	m_dma_bus_owner = -1;
 	m_current_dtc = nullptr;
 
 	m_standby_pending = false;
@@ -327,8 +347,16 @@ void h8_device::request_state(int state)
 	m_requested_state = state;
 }
 
+void h8_device::device_post_load()
+{
+	m_next_event_valid = false;
+}
+
 void h8_device::recompute_bcount(u64 event_time)
 {
+	m_next_event = event_time;
+	m_next_event_valid = true;
+
 	if(!event_time || event_time >= total_cycles() + m_icount) {
 		m_bcount = 0;
 		return;
@@ -338,7 +366,35 @@ void h8_device::recompute_bcount(u64 event_time)
 
 void h8_device::execute_run()
 {
-	internal_update(total_cycles());
+	// m_next_event is the earliest peripheral event found by the last full
+	// update.  No event moves earlier without another full update: whatever
+	// adds an event or brings one forward calls internal_update().  An event
+	// can move later without one (a 16-bit timer channel stopped through
+	// TSTR, the notify_standby(0) handlers); the cached time is then early,
+	// which costs one poll that finds nothing due.  On a device whose
+	// peripherals do nothing before their event is due, polling them before
+	// the cached time changes nothing, so recompute the countdown for the new
+	// timeslice directly.  A nested m_cpu->internal_update() from inside a
+	// peripheral's poll (h8_sci.cpp) has its recompute_bcount() overwritten
+	// by the outer call.  Today that can only leave the cached time early,
+	// which is safe, but it is part of the rule: an overwrite that left it
+	// late would break the skip.
+	if(m_next_event_valid && idle_entry_update_skippable() && (!m_next_event || total_cycles() < m_next_event)) {
+#if H8_CHECK_ENTRY_SKIP
+		// Poll anyway and check the rule: the event may now be later than the
+		// cached one, never earlier.  0 means no event, so it sorts last.
+		// This catches an event that moved earlier.  It cannot catch a
+		// peripheral whose poll changes state before its event is due, and
+		// the skip relies on that never happening as well.
+		const u64 cached = m_next_event;
+		internal_update(total_cycles());
+		if((m_next_event ? m_next_event : ~u64(0)) < (cached ? cached : ~u64(0)))
+			fatalerror("%s: peripheral event at cycle %d is before the cached %d; it moved earlier without a full update\n", tag(), m_next_event, cached);
+#else
+		recompute_bcount(m_next_event);
+#endif
+	} else
+		internal_update(total_cycles());
 
 	m_icount -= m_count_before_instruction_step;
 	if(m_icount < 0) {
@@ -484,51 +540,117 @@ void h8_device::state_string_export(const device_state_entry &entry, std::string
 	}
 }
 
-// FIXME: one-state bus cycles are only provided for on-chip ROM & RAM in H8S/2000 and H8S/2600.
-// All other accesses take *at least* two states each, and additional wait states are often programmed for external memory!
+int h8_device::memory_access_cycles(u32 address, int size) const
+{
+	// H8S devices can complete accesses to their on-chip ROM/RAM in one state.
+	// H8/300-family devices take at least two states.  Parts with an external
+	// bus controller override this to account for area width and wait states.
+	return m_has_exr ? 1 : 2;
+}
+
+int h8_device::interrupt_priority_cycles() const
+{
+	// Existing H8 cores already model their internal exception-processing
+	// phases in the generated IRQ sequence.  Devices with a separately
+	// documented priority-decision phase override this hook.
+	return 0;
+}
+
+void h8_device::interrupt_priority_complete()
+{
+	// Most H8 cores treat the vector selected at the instruction boundary as
+	// final.  Parts with a separately timed priority-decision phase can replace
+	// that tentative winner when a better request arrives during the phase.
+}
+
+bool h8_device::interrupt_post_accept_prefetch() const
+{
+	// Preserve established timing on devices whose exception bus sequence has
+	// not been verified against a hardware manual.
+	return false;
+}
+
+bool h8_device::idle_entry_update_skippable() const
+{
+	// Only safe where every peripheral's internal_update() is known to leave
+	// its state alone until its event is due.  Devices opt in after review.
+	return false;
+}
+
+bool h8_device::internal_phase_checkpointing_enabled() const
+{
+	// Mid-instruction event checkpoints can change device interleave even when
+	// the instruction's total cycle count is unchanged.  Keep the established
+	// instruction-boundary behavior unless a device explicitly opts in.
+	return false;
+}
+
+void h8_device::interrupt_instruction_boundary()
+{
+}
+
+int h8_device::reset_processing_cycles() const
+{
+	// Reset timing varies by family.  Opt in from a device whose hardware
+	// manual documents a separate post-vector internal-processing phase.
+	return 0;
+}
+
+int h8_device::dma_bus_acquisition_cycles(int) const
+{
+	// Bus handoff timing varies by family.  Devices with a documented dead
+	// state between CPU ownership and the first DMAC read opt in here.
+	return 0;
+}
+
+void h8_device::begin_dma_bus_cycle(int channel)
+{
+	const int acquisition_cycles = dma_bus_acquisition_cycles(channel);
+	if(acquisition_cycles && m_dma_bus_owner != channel) {
+		m_icount -= acquisition_cycles;
+		m_dma_bus_owner = channel;
+	} else if(!acquisition_cycles)
+		m_dma_bus_owner = -1;
+}
+
+void h8_device::charge_memory_access(u32 address, int size)
+{
+	m_last_memory_access_cycles = memory_access_cycles(address, size);
+	m_icount -= m_last_memory_access_cycles;
+}
+
+void h8_device::refund_memory_access()
+{
+	m_icount += m_last_memory_access_cycles;
+}
 
 u16 h8_device::read16i(u32 adr)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 2);
 	return m_cache.read_word(adr & ~1);
 }
 
 u8 h8_device::read8(u32 adr)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 1);
 	return m_program.read_byte(adr);
 }
 
 void h8_device::write8(u32 adr, u8 data)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 1);
 	m_program.write_byte(adr, data);
 }
 
 u16 h8_device::read16(u32 adr)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 2);
 	return m_program.read_word(adr & ~1);
 }
 
 void h8_device::write16(u32 adr, u16 data)
 {
-	if(m_has_exr)
-		m_icount--;
-	else
-		m_icount -= 2;
+	charge_memory_access(adr, 2);
 	m_program.write_word(adr & ~1, data);
 }
 
@@ -559,6 +681,19 @@ void h8_device::prefetch_done()
 		m_inst_state = STATE_TRACE;
 	else
 		m_inst_state = m_IR[0] = m_PIR;
+
+	// Some H8 interrupt controllers keep an enable/flag clear from taking
+	// effect for arbitration until the instruction performing the write has
+	// completed.  The selected vector has already been snapshotted above.
+	interrupt_instruction_boundary();
+
+	if(m_inst_state != STATE_DMA) {
+		// The ownership tracker itself has no timed release phase.  H8/3003
+		// hardware manual ADE-602-055A figures 8-13 and 8-15 put Td before
+		// DMAC acquisition and begin the following CPU cycle immediately after
+		// the final DMAC write.
+		m_dma_bus_owner = -1;
+	}
 }
 
 void h8_device::prefetch_done_noirq()
@@ -567,6 +702,7 @@ void h8_device::prefetch_done_noirq()
 		m_inst_state = STATE_TRACE;
 	else
 		m_inst_state = m_IR[0] = m_PIR;
+	interrupt_instruction_boundary();
 }
 
 void h8_device::prefetch_done_notrace()
@@ -579,6 +715,7 @@ void h8_device::prefetch_done_notrace()
 void h8_device::prefetch_done_noirq_notrace()
 {
 	m_inst_state = m_IR[0] = m_PIR;
+	interrupt_instruction_boundary();
 }
 
 void h8_device::set_irq(int irq_vector, int irq_level, bool irq_nmi)

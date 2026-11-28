@@ -47,6 +47,23 @@ public:
 	u8 rdr_r();
 	void scmr_w(u8 data);
 	u8 scmr_r();
+	u64 debug_rx_error_count() const { return m_rx_error_count; }
+	u64 debug_rx_frames() const { return m_rx_frames; }
+	u64 debug_rx_accepted() const { return m_rx_accepted; }
+	bool debug_rx_idle() const { return m_rx_state == ST_IDLE; }
+	u64 debug_rx_overruns() const { return m_rx_error_types[0]; }
+	u64 debug_rx_framing_errors() const { return m_rx_error_types[1]; }
+	u64 debug_rx_parity_errors() const { return m_rx_error_types[2]; }
+	u8 debug_last_rx_error() const { return m_last_rx_error; }
+	u32 debug_last_rx_error_pc() const { return m_last_rx_error_pc; }
+	double debug_last_rx_error_time() const { return m_last_rx_error_time; }
+	double debug_rx_start_time() const { return m_debug_rx_start_time; }
+	u8 debug_rx_sample_count() const { return m_debug_rx_sample_count; }
+	double debug_rx_sample_time(u8 index) const { return m_debug_rx_sample_times[index]; }
+	u8 debug_rx_sample_state(u8 index) const { return m_debug_rx_sample_states[index]; }
+	u8 debug_rx_sample_value(u8 index) const { return m_debug_rx_sample_values[index]; }
+	void debug_enable_rx_capture(bool enable) { m_debug_rx_capture = enable; }
+	bool debug_inject_rx_byte(u8 data);
 
 	void do_rx_w(int state);
 	void do_clk_w(int state);
@@ -119,6 +136,19 @@ protected:
 
 	u8 m_rdr, m_tdr, m_smr, m_scr, m_ssr, m_ssr_read, m_brr, m_rsr, m_tsr;
 	u64 m_clock_event, m_clock_step, m_divider;
+	u64 m_rx_error_count;
+	u64 m_rx_frames;
+	u64 m_rx_accepted;
+	std::array<u64, 3> m_rx_error_types;
+	bool m_debug_rx_capture;
+	double m_debug_rx_start_time;
+	u8 m_debug_rx_sample_count;
+	std::array<double, 12> m_debug_rx_sample_times;
+	std::array<u8, 12> m_debug_rx_sample_states;
+	std::array<u8, 12> m_debug_rx_sample_values;
+	u8 m_last_rx_error;
+	u32 m_last_rx_error_pc;
+	double m_last_rx_error_time;
 
 	std::string m_last_clock_message;
 
@@ -139,6 +169,7 @@ protected:
 
 	void rx_start();
 	void rx_done();
+	void record_rx_error(u8 flag);
 	void rx_async_tick();
 	void rx_async_step();
 	void rx_sync_tick();

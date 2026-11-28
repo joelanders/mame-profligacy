@@ -244,7 +244,7 @@ const nec_common_device::nec_ophandler nec_common_device::s_nec_instruction[256]
 	&nec_common_device::i_outdxal,      /* 0xee */
 	&nec_common_device::i_outdxax,      /* 0xef */
 	&nec_common_device::i_lock,         /* 0xf0 */
-	&nec_common_device::i_invalid,      /* 0xf1 */
+	&nec_common_device::i_v55_iram,     /* 0xf1 */
 	&nec_common_device::i_repne,        /* 0xf2 */
 	&nec_common_device::i_repe,         /* 0xf3 */
 	&nec_common_device::i_hlt,          /* 0xf4 */
