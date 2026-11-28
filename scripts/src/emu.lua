@@ -208,6 +208,7 @@ files {
 	MAME_DIR .. "src/emu/save.h",
 	MAME_DIR .. "src/emu/schedule.cpp",
 	MAME_DIR .. "src/emu/schedule.h",
+	MAME_DIR .. "src/emu/dspcluster.h",
 	MAME_DIR .. "src/emu/screen.cpp",
 	MAME_DIR .. "src/emu/screen.h",
 	MAME_DIR .. "src/emu/screen_svg.cpp",

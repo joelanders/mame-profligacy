@@ -322,6 +322,7 @@ private:
 	static std::vector<u32> find_channel_mapping(const osd::channel_position &pos, const osd::audio_info::node_info *node);
 	void startup_cleanups();
 	void streams_update();
+	void record_output();
 	template<bool is_output, typename S> void apply_osd_changes(std::vector<S> &streams);
 	void osd_information_update();
 	void generate_mapping();

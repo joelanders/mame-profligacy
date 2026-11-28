@@ -9,6 +9,7 @@
 ***************************************************************************/
 
 #include "emu.h"
+#include "dspcluster.h"
 
 #include "resampler.h"
 #include "sound.h"
@@ -695,6 +696,20 @@ void sound_stream::reprime_sync_timer()
 
 void sound_stream::sync_update(s32)
 {
+	if (cluster_post(m_device.machine().scheduler(), this,
+			[](void *p, u64, u64) { static_cast<sound_stream *>(p)->update(); }))
+	{
+		// The original update includes the sample at floor(now * rate).
+		// Schedule its successor without reading the worker's output buffer.
+		if (is_active())
+		{
+			attotime next = sample_to_time(get_current_sample_index() + 1);
+			next.m_attoseconds += ATTOSECONDS_PER_NANOSECOND;
+			m_sync_timer->adjust(next - m_device.machine().time());
+		}
+		cluster_audio_boundary(m_device);
+		return;
+	}
 	update();
 	reprime_sync_timer();
 }
